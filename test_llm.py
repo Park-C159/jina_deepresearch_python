@@ -14,7 +14,7 @@ completion = client.chat.completions.create(
     model="qwen3-coder-plus",  # 此处以DeepSeek-R1-671B为例，可按需更换模型名称。
     messages=[
         {'role': 'system', 'content': 'You are a helpful assistant.'},
-        {'role': 'user', 'content': '你是谁？'}],
+        {'role': 'user', 'content': '你是否具备思考功能？'}],
 )
 
 print(completion.model_dump_json())
