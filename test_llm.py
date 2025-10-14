@@ -10,11 +10,23 @@ client = OpenAI(
     api_key=os.getenv("API_KEY"),
     base_url=os.getenv("BASE_URL"),
 )
+messages = [
+    {"role": "system", "content": "你是一位历史研究专家。"},
+    {"role": "user", "content": "三大战役各个军队伤亡如何？"}
+]
 completion = client.chat.completions.create(
-    model="qwen3-coder-plus",  # 此处以DeepSeek-R1-671B为例，可按需更换模型名称。
-    messages=[
-        {'role': 'system', 'content': 'You are a helpful assistant.'},
-        {'role': 'user', 'content': '你是否具备思考功能？'}],
+    # 模型列表：https://help.aliyun.com/zh/model-studio/getting-started/models
+    model="qwen-plus",
+    messages=messages,
+    # Qwen3模型通过enable_thinking参数控制思考过程（开源版默认True，商业版默认False）
+    # 使用Qwen3开源版模型时，若未启用流式输出，请将下行取消注释，否则会报错
+    extra_body={"enable_thinking": True},
 )
+print(completion)
+messages.append({
+    "role": "assistant",
+    "content": "<think>" + completion.choices[0].message.content + "</think>\n" + completion.choices[0].message.content
+})
 
-print(completion.model_dump_json())
+print(messages)
+
