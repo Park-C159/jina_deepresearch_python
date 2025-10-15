@@ -198,33 +198,56 @@ def json_schema_to_pydantic(schema: Dict[str, Any]) -> Any:
             raise TypeError(f"Unsupported type: {typ}")
     return create_model("DynamicSchema", **fields)
 
+from tool.jina_search import *
+
+
 
 # 按装订区域中的绿色按钮以运行脚本。
 if __name__ == '__main__':
-    log = get_logger(__name__)
-    log.info('[chat/comletions] Start: ' + str(llm_cfg))
+    # 确保环境变量 JINA_API_KEY 已设置
+    # export JINA_API_KEY=xxxxxxx
 
-    cleaned_message = messages_cleansing(messages)
-    is_valid = validate_messages(cleaned_message)
-    if is_valid:
-        log.warning(is_valid)
-        assert is_valid
-
-    # 3. 再带上 JSON Schema，让函数生成 Pydantic 模型
-    json_schema = {
-        "type": "object",
-        "properties": {
-            "answer": {"type": "string"},
-            "confidence": {"type": "string"}
-        },
-        "required": ["answer"]
+    # 初始化 token tracker
+    tracker = TokenTracker(budget=1000)
+    # 构造查询
+    query = {
+        'q': 'chatgpt history',  # 查询内容
     }
+    try:
+        # 搜索
+        result = search(query, domain='general', num=3, tracker=tracker)
+        # 打印搜索结果
+        print("搜索返回:", result['response']['results'])
+        # 打印 Token 用量
+        tracker.print_summary()
+    except Exception as exc:
+        print(f"出错: {exc}")
 
-    cfg = build_response_schema(
-        budget_tokens=llm_cfg.get("token_budget"),
-        max_attempts=llm_cfg.get("max_attempts"),
-        response_format_json_schema=llm_cfg.get("response_schema"),
-    )
 
-    print(cfg)
+    # log = get_logger(__name__)
+    # log.info('[chat/comletions] Start: ' + str(llm_cfg))
+    #
+    # cleaned_message = messages_cleansing(messages)
+    # is_valid = validate_messages(cleaned_message)
+    # if is_valid:
+    #     log.warning(is_valid)
+    #     assert is_valid
+    #
+    # # 3. 再带上 JSON Schema，让函数生成 Pydantic 模型
+    # json_schema = {
+    #     "type": "object",
+    #     "properties": {
+    #         "answer": {"type": "string"},
+    #         "confidence": {"type": "string"}
+    #     },
+    #     "required": ["answer"]
+    # }
+    #
+    # cfg = build_response_schema(
+    #     budget_tokens=llm_cfg.get("token_budget"),
+    #     max_attempts=llm_cfg.get("max_attempts"),
+    #     response_format_json_schema=llm_cfg.get("response_schema"),
+    # )
+    #
+    # print(cfg)
 # 访问 https://www.jetbrains.com/help/pycharm/ 获取 PyCharm 帮助

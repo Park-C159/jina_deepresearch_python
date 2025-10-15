@@ -1,10 +1,16 @@
 import logging
+import os
 import re
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
+from dotenv import load_dotenv
+
 from utils.url_tool import *
+
+load_dotenv()
+SEARCH_PROVIDER = os.getenv("SEARCH_PROVIDER")
 
 
 @dataclass
@@ -230,7 +236,6 @@ FAILURE IS NOT AN OPTION. EXECUTE WITH EXTREME PREJUDICE! ⚡️
 """
         )
 
-
     # 4. 把动作片段拼到一起
     sections.append(
         f"""
@@ -251,8 +256,9 @@ Based on the current context, you must choose one of the following actions:
         "url_list": [u.url for u in url_list],
     }
 
-async def update_references(this_step:dict, all_urls: Dict[str, dict]):
-    references = this_step.get("reference", [])
+
+async def update_references(this_step: dict, all_urls: Dict[str, dict]):
+    references = this_step.get("references", [])
     updated_refs = []
 
     for ref in references:
@@ -264,10 +270,10 @@ async def update_references(this_step:dict, all_urls: Dict[str, dict]):
             continue
         all_url_info = all_urls.get(normalized_url, {})
         exact_quote = (
-            ref.get('exactQuote') or
-            all_url_info.get('description') or
-            all_url_info.get('title') or
-            ''
+                ref.get('exactQuote') or
+                all_url_info.get('description') or
+                all_url_info.get('title') or
+                ''
         )
         # 字符串替换，保留字母、数字和空格
         exact_quote = re.sub(r'[^\w\s]', ' ', exact_quote, flags=re.UNICODE)
@@ -280,9 +286,8 @@ async def update_references(this_step:dict, all_urls: Dict[str, dict]):
             'dateTime': ref.get('dateTime') or all_url_info.get('date', ''),
         }
         updated_refs.append(updated_ref)
-    this_step["reference"] = updated_refs
+    this_step["references"] = updated_refs
 
-    # 并发异步处理URL的dateTime
     # 并发异步处理URL的dateTime
     tasks = [
         get_last_modified(ref['url'])
@@ -300,6 +305,48 @@ async def update_references(this_step:dict, all_urls: Dict[str, dict]):
     logging.debug('Updated references:', {'references': this_step['references']})
 
 
+def execute_search_queries(
+        keywords_queries: List[Dict[str, Any]],
+        context: Any,
+        all_urls: Dict[str, Dict[str, Any]],
+        SchemaGen: Any,
+        web_contents: Dict[str, Dict[str, Any]],
+        only_hostnames: Optional[List[str]] = None,
+        search_provider: Optional[str] = None,
+        meta: Optional[str] = None
+):
+    log = get_logger(__name__)
+    uniq_q_only = [q['q'] for q in keywords_queries]
+    new_knowledge = []
+    searched_queries = []
+    context.action_tracker.track_think(
+        'search_for',
+        SchemaGen.language_code,
+        {'keywords': ', '.join(uniq_q_only)},
+    )
+
+    utility_score = 0
+
+    for query in keywords_queries:
+        results = []
+        old_query = query['q']
+        if only_hostnames and len(only_hostnames) > 0:
+            query['q'] = f"{query['q']} site:{' OR site:'.join(only_hostnames)}"
+
+        try:
+            log.debug('Search query:', {'query': query})
+            provider = search_provider or SEARCH_PROVIDER
+            if provider in ('jina', 'arxiv'):
+                num = None if meta else 30
+                resp = await client.search()
+
+
+async def test(this_step, all_urls):
+    from pprint import pprint
+    await update_references(this_step, all_urls)
+    pprint(this_step)
+
+
 if __name__ == "__main__":
     prompt = get_prompt(
         context=["searched: 'life meaning'", "visited: https://example.com/life"],
@@ -309,7 +356,7 @@ if __name__ == "__main__":
     )
     # 测试数据
     this_step = {
-        "reference": [
+        "references": [
             {
                 "url": "https://example.com/news/123",
                 "exactQuote": None,
@@ -345,9 +392,7 @@ if __name__ == "__main__":
             "date": "2024-05-05T12:00:00Z"
         }
     }
-    update_references(this_step, all_urls)
-    from pprint import pprint
-    pprint(this_step)
+    asyncio.run(test(this_step, all_urls))
 
     # print(prompt["system"])
 

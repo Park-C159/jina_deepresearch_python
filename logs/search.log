@@ -1,0 +1,2 @@
+2025-10-15 16:04:20,078 | ERROR    | search | search:136 | Search error: 401 Client Error: Unauthorized for url: https://svip.jina.ai/
+2025-10-15 16:04:47,140 | ERROR    | search | search:136 | Search error: 401 Client Error: Unauthorized for url: https://r.jina.ai/
