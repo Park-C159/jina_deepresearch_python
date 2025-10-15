@@ -248,6 +248,18 @@ Based on the current context, you must choose one of the following actions:
         "url_list": [u.url for u in url_list],
     }
 
+def update_references(this_step:dict, all_urls: Dict[str, dict]):
+    references = this_step.get("reference", [])
+    updated_refs = []
+
+    for ref in references:
+        url = ref.get("url")
+        if not url:
+            continue
+        normalized_url = normalized_url(url)
+        if not normalized_url:
+            continue
+
 
 if __name__ == "__main__":
     prompt = get_prompt(
