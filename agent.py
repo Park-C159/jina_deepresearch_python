@@ -1,7 +1,10 @@
+import logging
 import re
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+
+from utils.url_tool import *
 
 
 @dataclass
@@ -248,7 +251,7 @@ Based on the current context, you must choose one of the following actions:
         "url_list": [u.url for u in url_list],
     }
 
-def update_references(this_step:dict, all_urls: Dict[str, dict]):
+async def update_references(this_step:dict, all_urls: Dict[str, dict]):
     references = this_step.get("reference", [])
     updated_refs = []
 
@@ -256,9 +259,45 @@ def update_references(this_step:dict, all_urls: Dict[str, dict]):
         url = ref.get("url")
         if not url:
             continue
-        normalized_url = normalized_url(url)
+        normalized_url = normalize_url(url)
         if not normalized_url:
             continue
+        all_url_info = all_urls.get(normalized_url, {})
+        exact_quote = (
+            ref.get('exactQuote') or
+            all_url_info.get('description') or
+            all_url_info.get('title') or
+            ''
+        )
+        # 字符串替换，保留字母、数字和空格
+        exact_quote = re.sub(r'[^\w\s]', ' ', exact_quote, flags=re.UNICODE)
+        exact_quote = re.sub(r'\s+', ' ', exact_quote).strip()
+        updated_ref = {
+            **ref,
+            'exactQuote': exact_quote,
+            'title': all_url_info.get('title', ''),
+            'url': normalized_url,
+            'dateTime': ref.get('dateTime') or all_url_info.get('date', ''),
+        }
+        updated_refs.append(updated_ref)
+    this_step["reference"] = updated_refs
+
+    # 并发异步处理URL的dateTime
+    # 并发异步处理URL的dateTime
+    tasks = [
+        get_last_modified(ref['url'])
+        for ref in this_step['references']
+        if not ref.get('dateTime')
+    ]
+    results = await asyncio.gather(*tasks)
+    # 填充dateTime
+    result_idx = 0
+    for ref in this_step['references']:
+        if not ref.get('dateTime'):
+            ref['dateTime'] = results[result_idx] or ''
+            result_idx += 1
+
+    logging.debug('Updated references:', {'references': this_step['references']})
 
 
 if __name__ == "__main__":
@@ -268,7 +307,49 @@ if __name__ == "__main__":
         allow_search=True,
         beast_mode=True,
     )
-    print(prompt["system"])
+    # 测试数据
+    this_step = {
+        "reference": [
+            {
+                "url": "https://example.com/news/123",
+                "exactQuote": None,
+                "dateTime": None,
+            },
+            {
+                "url": "http://another-site.org/info",
+                # 已有 exactQuote
+                "exactQuote": "This is an important fact!",
+                # 已有 dateTime
+                "dateTime": "2023-10-10T09:20:00Z",
+            },
+            {
+                "url": "https://example.com/news/456",
+                # exactQuote 不存在
+            },
+        ]
+    }
+    all_urls = {
+        "example.com/news/123": {
+            "title": "First Example News",
+            "description": "Describes amazing event.",
+            "date": "2022-05-01T08:00:00Z"
+        },
+        "another-site.org/info": {
+            "title": "Another Site Info",
+            "description": "Information page.",
+            "date": "2023-09-09T09:00:00Z"
+        },
+        "example.com/news/456": {
+            "title": "Second News",
+            "description": "Update on previous news!",
+            "date": "2024-05-05T12:00:00Z"
+        }
+    }
+    update_references(this_step, all_urls)
+    from pprint import pprint
+    pprint(this_step)
+
+    # print(prompt["system"])
 
 # if __name__ == "__main__":
 #     knowledge_items = [
