@@ -1,16 +1,13 @@
 # 这是一个示例 Python 脚本。
-import logging
-import re
-import sys
+import re, sys
 from typing import List, Dict, Any, Optional
-from pathlib import Path
 from pydantic import create_model
 
+from utils.get_log import get_logger
+from utils.url_tool import add_to_all_urls
 
 # 按 ⌃R 执行或将其替换为您的代码。
 # 按 双击 ⇧ 在所有地方搜索类、文件、工具窗口、操作和设置。
-LOG_DIR = Path("logs")
-LOG_DIR.mkdir(exist_ok=True)
 
 messages = [
     {'role': 'system', 'content': '你是一位历史研究专家。'},
@@ -40,35 +37,6 @@ llm_cfg = {
     },
 }
 
-
-def get_logger(name: str) -> logging.Logger:
-    """获取一个已配置好的 logger，同名 logger 全局唯一。"""
-    logger = logging.getLogger(name)
-    if logger.hasHandlers():  # 避免重复 addHandler
-        return logger
-
-    logger.setLevel(logging.DEBUG)  # 全局最低级别
-
-    # 1) 控制台
-    console = logging.StreamHandler(sys.stdout)
-    console.setLevel(logging.INFO)
-    console_fmt = logging.Formatter(
-        "[%(asctime)s] %(levelname)s in %(name)s: %(message)s",
-        datefmt="%H:%M:%S")
-    console.setFormatter(console_fmt)
-
-    # 2) 文件（按大小切分）
-    from logging.handlers import RotatingFileHandler
-    file_handler = RotatingFileHandler(
-        LOG_DIR / f"{name}.log", maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8")
-    file_handler.setLevel(logging.DEBUG)
-    file_fmt = logging.Formatter(
-        "%(asctime)s | %(levelname)-8s | %(name)s | %(funcName)s:%(lineno)d | %(message)s")
-    file_handler.setFormatter(file_fmt)
-
-    logger.addHandler(console)
-    logger.addHandler(file_handler)
-    return logger
 
 
 def messages_cleansing(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -231,33 +199,45 @@ def json_schema_to_pydantic(schema: Dict[str, Any]) -> Any:
             raise TypeError(f"Unsupported type: {typ}")
     return create_model("DynamicSchema", **fields)
 
+from tool.jina_search import *
+
+
 
 # 按装订区域中的绿色按钮以运行脚本。
 if __name__ == '__main__':
-    log = get_logger(__name__)
-    log.info('[chat/comletions] Start: ' + str(llm_cfg))
+    all_urls = {'https://example.com/index': {'url': 'https://EXAMPLE.com/index ', 'description': 'Welcome page', 'weight': 3}}
+    snippet1 = {'url': 'https://example.com/index', 'description': 'Intro page', 'weight': 1}
+    snippet2 = {'url': 'https://EXAMPLE.com/index ', 'description': 'Welcome page', 'weight': 1}
 
-    cleaned_message = messages_cleansing(messages)
-    is_valid = validate_messages(cleaned_message)
-    if is_valid:
-        log.warning(is_valid)
-        assert is_valid
+    add_to_all_urls(snippet1, all_urls, 2)
+    add_to_all_urls(snippet2, all_urls, 3)
+    print(all_urls)
 
-    # 3. 再带上 JSON Schema，让函数生成 Pydantic 模型
-    json_schema = {
-        "type": "object",
-        "properties": {
-            "answer": {"type": "string"},
-            "confidence": {"type": "string"}
-        },
-        "required": ["answer"]
-    }
 
-    cfg = build_response_schema(
-        budget_tokens=llm_cfg.get("token_budget"),
-        max_attempts=llm_cfg.get("max_attempts"),
-        response_format_json_schema=llm_cfg.get("response_schema"),
-    )
-
-    print(cfg)
+    # log = get_logger(__name__)
+    # log.info('[chat/comletions] Start: ' + str(llm_cfg))
+    #
+    # cleaned_message = messages_cleansing(messages)
+    # is_valid = validate_messages(cleaned_message)
+    # if is_valid:
+    #     log.warning(is_valid)
+    #     assert is_valid
+    #
+    # # 3. 再带上 JSON Schema，让函数生成 Pydantic 模型
+    # json_schema = {
+    #     "type": "object",
+    #     "properties": {
+    #         "answer": {"type": "string"},
+    #         "confidence": {"type": "string"}
+    #     },
+    #     "required": ["answer"]
+    # }
+    #
+    # cfg = build_response_schema(
+    #     budget_tokens=llm_cfg.get("token_budget"),
+    #     max_attempts=llm_cfg.get("max_attempts"),
+    #     response_format_json_schema=llm_cfg.get("response_schema"),
+    # )
+    #
+    # print(cfg)
 # 访问 https://www.jetbrains.com/help/pycharm/ 获取 PyCharm 帮助

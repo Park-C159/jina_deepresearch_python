@@ -1,0 +1,8 @@
+2025-10-15 16:04:20,078 | ERROR    | search | search:136 | Search error: 401 Client Error: Unauthorized for url: https://svip.jina.ai/
+2025-10-15 16:04:47,140 | ERROR    | search | search:136 | Search error: 401 Client Error: Unauthorized for url: https://r.jina.ai/
+2025-10-16 11:41:02,665 | ERROR    | search | search:136 | Search error: 401 Client Error: Unauthorized for url: https://svip.jina.ai/
+2025-10-16 11:44:34,342 | ERROR    | search | search:136 | Search error: 401 Client Error: Unauthorized for url: https://r.jina.ai/
+2025-10-16 11:45:06,059 | ERROR    | search | search:136 | Search error: 401 Client Error: Unauthorized for url: https://r.jina.ai/
+2025-10-16 11:46:13,581 | ERROR    | search | search:137 | Search error: 401 Client Error: Unauthorized for url: https://r.jina.ai/
+2025-10-16 11:46:29,278 | ERROR    | search | search:137 | Search error: 401 Client Error: Unauthorized for url: https://r.jina.ai/
+2025-10-16 11:47:28,993 | DEBUG    | search | search:125 | Search results metadata: {'engine': 'google', 'query': 'chatgpt history', 'latency': 712, 'credits': 1, 'num_results': 3}

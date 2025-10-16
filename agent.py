@@ -1,7 +1,18 @@
+import logging
+import os
 import re
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+
+from dotenv import load_dotenv
+
+from tool.jina_search import search
+from utils.url_tool import *
+
+load_dotenv()
+SEARCH_PROVIDER = os.getenv("SEARCH_PROVIDER")
+STEP_SLEEP = float(os.getenv("STEP_SLEEP"))
 
 
 @dataclass
@@ -227,7 +238,6 @@ FAILURE IS NOT AN OPTION. EXECUTE WITH EXTREME PREJUDICE! ⚡️
 """
         )
 
-
     # 4. 把动作片段拼到一起
     sections.append(
         f"""
@@ -249,6 +259,148 @@ Based on the current context, you must choose one of the following actions:
     }
 
 
+async def update_references(this_step: dict, all_urls: Dict[str, dict]):
+    references = this_step.get("references", [])
+    updated_refs = []
+
+    for ref in references:
+        url = ref.get("url")
+        if not url:
+            continue
+        normalized_url = normalize_url(url)
+        if not normalized_url:
+            continue
+        all_url_info = all_urls.get(normalized_url, {})
+        exact_quote = (
+                ref.get('exactQuote') or
+                all_url_info.get('description') or
+                all_url_info.get('title') or
+                ''
+        )
+        # 字符串替换，保留字母、数字和空格
+        exact_quote = re.sub(r'[^\w\s]', ' ', exact_quote, flags=re.UNICODE)
+        exact_quote = re.sub(r'\s+', ' ', exact_quote).strip()
+        updated_ref = {
+            **ref,
+            'exactQuote': exact_quote,
+            'title': all_url_info.get('title', ''),
+            'url': normalized_url,
+            'dateTime': ref.get('dateTime') or all_url_info.get('date', ''),
+        }
+        updated_refs.append(updated_ref)
+    this_step["references"] = updated_refs
+
+    # 并发异步处理URL的dateTime
+    tasks = [
+        get_last_modified(ref['url'])
+        for ref in this_step['references']
+        if not ref.get('dateTime')
+    ]
+    results = await asyncio.gather(*tasks)
+    # 填充dateTime
+    result_idx = 0
+    for ref in this_step['references']:
+        if not ref.get('dateTime'):
+            ref['dateTime'] = results[result_idx] or ''
+            result_idx += 1
+
+    logging.debug('Updated references:', {'references': this_step['references']})
+
+
+async def execute_search_queries(
+        keywords_queries: List[Dict[str, Any]],
+        context: Any,
+        all_urls: Dict[str, Dict[str, Any]],
+        SchemaGen: Any,
+        web_contents: Dict[str, Dict[str, Any]],
+        only_hostnames: Optional[List[str]] = None,
+        search_provider: Optional[str] = None,
+        meta: Optional[str] = None
+):
+    log = get_logger(__name__)
+    uniq_q_only = [q['q'] for q in keywords_queries]
+    new_knowledge = []
+    searched_queries = []
+    context.action_tracker.track_think(
+        'search_for',
+        SchemaGen.language_code,
+        {'keywords': ', '.join(uniq_q_only)},
+    )
+
+    utility_score = 0
+
+    for query in keywords_queries:
+        results = []
+        old_query = query['q']
+        if only_hostnames and len(only_hostnames) > 0:
+            query['q'] = f"{query['q']} site:{' OR site:'.join(only_hostnames)}"
+
+        try:
+            log.debug('Search query:', {'query': query})
+            provider = search_provider or SEARCH_PROVIDER
+            if provider in ('jina', 'arxiv'):
+                num = None if meta else 30
+                resp = search(query, num=num, meta=meta, tracker=context.tokenTracker)
+                results = resp['response']['results'] if 'response' in resp and 'results' in resp['response'] else []
+            ## 暂时不支持下面注释的网页搜索模式
+            # elif provider == 'duck':
+            #     resp = await duck_search(query['q'], {'safe_search': SafeSearchType.STRICT})
+            #     results = resp['results'] if 'results' in resp else []
+            # elif provider == 'brave':
+            #     resp = await brave_search(query['q'])
+            #     results = resp['response']['web']['results'] if 'response' in resp and 'web' in resp['response'] and 'results' in resp['response']['web'] else []
+            # elif provider == 'serper':
+            #     resp = await serper_search(query)
+            #     results = resp['response']['organic'] if 'response' in resp and 'organic' in resp['response'] else []
+            else:
+                results = []
+            if not results:
+                raise Exception('No results found')
+        except Exception as e:
+            log.error(f"{SEARCH_PROVIDER} search failed for query:" + str({'query': query, 'error': e}))
+
+            # 401 错误时中止
+            if hasattr(e, 'response') and hasattr(e.response, 'status') and e.response.status == 401 and provider in ('jina', 'arxiv'):
+                raise Exception('Unauthorized Jina API key')
+            continue
+        finally:
+            await asyncio.sleep(STEP_SLEEP)
+
+        # 构建 minResults 列表
+        min_results = []
+        for r in results:
+            url = normalize_url(r.get('url') or r.get('link'))
+            if not url:
+                continue
+            min_results.append({
+                'title': r.get('title'),
+                'url': url,
+                'description': r.get('description') if 'description' in r else r.get('snippet'),
+                'weight': 1,
+                'date': r.get('date'),
+            })
+
+        for r in min_results:
+            utility_score += add_to_all_urls(r, all_urls)
+            web_contents[r['url']] = {
+                'title': r['title'],
+                # 'full': r['description'],
+                'chunks': [r['description']],
+                'chunk_positions': [[0, len(r['description'] or '')]],
+            }
+
+        searched_queries.append(query['q'])
+
+        try:
+            clusters = 
+
+
+async def test(this_step, all_urls):
+    from pprint import pprint
+    await update_references(this_step, all_urls)
+    pprint(this_step)
+
+
 if __name__ == "__main__":
     prompt = get_prompt(
         context=["searched: 'life meaning'", "visited: https://example.com/life"],
@@ -256,7 +408,47 @@ if __name__ == "__main__":
         allow_search=True,
         beast_mode=True,
     )
-    print(prompt["system"])
+    # 测试数据
+    this_step = {
+        "references": [
+            {
+                "url": "https://example.com/news/123",
+                "exactQuote": None,
+                "dateTime": None,
+            },
+            {
+                "url": "http://another-site.org/info",
+                # 已有 exactQuote
+                "exactQuote": "This is an important fact!",
+                # 已有 dateTime
+                "dateTime": "2023-10-10T09:20:00Z",
+            },
+            {
+                "url": "https://example.com/news/456",
+                # exactQuote 不存在
+            },
+        ]
+    }
+    all_urls = {
+        "example.com/news/123": {
+            "title": "First Example News",
+            "description": "Describes amazing event.",
+            "date": "2022-05-01T08:00:00Z"
+        },
+        "another-site.org/info": {
+            "title": "Another Site Info",
+            "description": "Information page.",
+            "date": "2023-09-09T09:00:00Z"
+        },
+        "example.com/news/456": {
+            "title": "Second News",
+            "description": "Update on previous news!",
+            "date": "2024-05-05T12:00:00Z"
+        }
+    }
+    asyncio.run(test(this_step, all_urls))
+
+    # print(prompt["system"])
 
 # if __name__ == "__main__":
 #     knowledge_items = [
