@@ -7,10 +7,12 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 
+from tool.jina_search import search
 from utils.url_tool import *
 
 load_dotenv()
 SEARCH_PROVIDER = os.getenv("SEARCH_PROVIDER")
+STEP_SLEEP = float(os.getenv("STEP_SLEEP"))
 
 
 @dataclass
@@ -305,7 +307,7 @@ async def update_references(this_step: dict, all_urls: Dict[str, dict]):
     logging.debug('Updated references:', {'references': this_step['references']})
 
 
-def execute_search_queries(
+async def execute_search_queries(
         keywords_queries: List[Dict[str, Any]],
         context: Any,
         all_urls: Dict[str, Dict[str, Any]],
@@ -338,7 +340,59 @@ def execute_search_queries(
             provider = search_provider or SEARCH_PROVIDER
             if provider in ('jina', 'arxiv'):
                 num = None if meta else 30
-                resp = await client.search()
+                resp = search(query, num=num, meta=meta, tracker=context.tokenTracker)
+                results = resp['response']['results'] if 'response' in resp and 'results' in resp['response'] else []
+            ## 暂时不支持下面注释的网页搜索模式
+            # elif provider == 'duck':
+            #     resp = await duck_search(query['q'], {'safe_search': SafeSearchType.STRICT})
+            #     results = resp['results'] if 'results' in resp else []
+            # elif provider == 'brave':
+            #     resp = await brave_search(query['q'])
+            #     results = resp['response']['web']['results'] if 'response' in resp and 'web' in resp['response'] and 'results' in resp['response']['web'] else []
+            # elif provider == 'serper':
+            #     resp = await serper_search(query)
+            #     results = resp['response']['organic'] if 'response' in resp and 'organic' in resp['response'] else []
+            else:
+                results = []
+            if not results:
+                raise Exception('No results found')
+        except Exception as e:
+            log.error(f"{SEARCH_PROVIDER} search failed for query:" + str({'query': query, 'error': e}))
+
+            # 401 错误时中止
+            if hasattr(e, 'response') and hasattr(e.response, 'status') and e.response.status == 401 and provider in ('jina', 'arxiv'):
+                raise Exception('Unauthorized Jina API key')
+            continue
+        finally:
+            await asyncio.sleep(STEP_SLEEP)
+
+        # 构建 minResults 列表
+        min_results = []
+        for r in results:
+            url = normalize_url(r.get('url') or r.get('link'))
+            if not url:
+                continue
+            min_results.append({
+                'title': r.get('title'),
+                'url': url,
+                'description': r.get('description') if 'description' in r else r.get('snippet'),
+                'weight': 1,
+                'date': r.get('date'),
+            })
+
+        for r in min_results:
+            utility_score += add_to_all_urls(r, all_urls)
+            web_contents[r['url']] = {
+                'title': r['title'],
+                # 'full': r['description'],
+                'chunks': [r['description']],
+                'chunk_positions': [[0, len(r['description'] or '')]],
+            }
+
+        searched_queries.append(query['q'])
+
+        try:
+            clusters = 
 
 
 async def test(this_step, all_urls):

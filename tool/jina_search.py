@@ -2,9 +2,13 @@ import os
 
 import requests
 from typing import Optional, Dict, Any
+
+from dotenv import load_dotenv
+
 from utils.get_log import get_logger
 
-JINA_API_KEY = os.getenv("JINA_API_KEY")  # 需确保config.py有此变量
+load_dotenv()
+JINA_API_KEY = os.getenv("JINA_API_KEY")
 from typing import Optional, Callable, Dict, List, Any
 import logging
 

@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import create_model
 
 from utils.get_log import get_logger
+from utils.url_tool import add_to_all_urls
 
 # 按 ⌃R 执行或将其替换为您的代码。
 # 按 双击 ⇧ 在所有地方搜索类、文件、工具窗口、操作和设置。
@@ -204,24 +205,13 @@ from tool.jina_search import *
 
 # 按装订区域中的绿色按钮以运行脚本。
 if __name__ == '__main__':
-    # 确保环境变量 JINA_API_KEY 已设置
-    # export JINA_API_KEY=xxxxxxx
+    all_urls = {'https://example.com/index': {'url': 'https://EXAMPLE.com/index ', 'description': 'Welcome page', 'weight': 3}}
+    snippet1 = {'url': 'https://example.com/index', 'description': 'Intro page', 'weight': 1}
+    snippet2 = {'url': 'https://EXAMPLE.com/index ', 'description': 'Welcome page', 'weight': 1}
 
-    # 初始化 token tracker
-    tracker = TokenTracker(budget=1000)
-    # 构造查询
-    query = {
-        'q': 'chatgpt history',  # 查询内容
-    }
-    try:
-        # 搜索
-        result = search(query, domain='general', num=3, tracker=tracker)
-        # 打印搜索结果
-        print("搜索返回:", result['response']['results'])
-        # 打印 Token 用量
-        tracker.print_summary()
-    except Exception as exc:
-        print(f"出错: {exc}")
+    add_to_all_urls(snippet1, all_urls, 2)
+    add_to_all_urls(snippet2, all_urls, 3)
+    print(all_urls)
 
 
     # log = get_logger(__name__)

@@ -4,14 +4,14 @@ import aiohttp
 import asyncio
 from utils.get_log import get_logger
 
-
 import re
 import urllib.parse
 
+
 def normalize_url(
-    url_string: str,
-    debug: bool = False,
-    options: dict = None
+        url_string: str,
+        debug: bool = False,
+        options: dict = None
 ) -> str | None:
     """
     Normalize a URL string according to similar rules as the TS version.
@@ -36,7 +36,8 @@ def normalize_url(
         url_string = re.sub(r'\s+', '', url_string).strip()
         if not url_string:
             raise ValueError("Empty URL")
-        if url_string.startswith('https://google.com/') or url_string.startswith('https://www.google.com') or url_string.startswith('https://baidu.com/s?'):
+        if url_string.startswith('https://google.com/') or url_string.startswith(
+                'https://www.google.com') or url_string.startswith('https://baidu.com/s?'):
             raise ValueError('Google/baidu search link')
         if 'example.com' in url_string:
             raise ValueError('Example URL')
@@ -81,6 +82,7 @@ def normalize_url(
                 if debug:
                     log_debug(f'Failed to decode path segment: {seg}', {'error': str(e)})
                 return seg
+
         path = '/'.join([decode_seg(s) for s in url.path.split('/')])
         path = re.sub(r'/+', '/', path)
         path = re.sub(r'/+$', '', path)
@@ -88,17 +90,21 @@ def normalize_url(
 
         # Query param normalization
         search_params = urllib.parse.parse_qsl(url.query, keep_blank_values=True)
+
         def param_filter(key):
             if key == '':
                 return False
             # Session IDs
-            if options.get('removeSessionIDs', True) and re.match(r'^(s|session|sid|sessionid|phpsessid|jsessionid|aspsessionid|asp\.net_sessionid)$', key, re.I):
+            if options.get('removeSessionIDs', True) and re.match(
+                    r'^(s|session|sid|sessionid|phpsessid|jsessionid|aspsessionid|asp\.net_sessionid)$', key, re.I):
                 return False
             # UTM params
             if options.get('removeUTMParams', True) and re.match(r'^utm_', key, re.I):
                 return False
             # tracking params
-            if options.get('removeTrackingParams', True) and re.match(r'^(ref|referrer|fbclid|gclid|cid|mcid|source|medium|campaign|term|content|sc_rid|mc_[a-z]+)$', key, re.I):
+            if options.get('removeTrackingParams', True) and re.match(
+                    r'^(ref|referrer|fbclid|gclid|cid|mcid|source|medium|campaign|term|content|sc_rid|mc_[a-z]+)$', key,
+                    re.I):
                 return False
             return True
 
@@ -138,7 +144,7 @@ def normalize_url(
             url.scheme,
             netloc,
             path,
-            '',    # params
+            '',  # params
             query,
             fragment
         ))
@@ -150,7 +156,7 @@ def normalize_url(
                 url.scheme,
                 netloc,
                 path,
-                '',    # params
+                '',  # params
                 query,
                 fragment
             ))
@@ -185,3 +191,57 @@ async def get_last_modified(url: str) -> str | None:
     except Exception as e:
         print('[ERROR] Failed to fetch last modified date', e)
         return None
+
+
+def smart_merge_strings(str1: str, str2: str) -> str:
+    # If either string is empty, return the other
+    if not str1:
+        return str2
+    if not str2:
+        return str1
+
+    # Check if one string is entirely contained within the other
+    if str2 in str1:
+        return str1
+    if str1 in str2:
+        return str2
+
+    # Find the maximum possible overlap length
+    max_overlap = min(len(str1), len(str2))
+    best_overlap_length = 0
+
+    # Check for overlaps starting from the largest possible
+    for overlap_length in range(max_overlap, 0, -1):
+        end_of_str1 = str1[-overlap_length:]
+        start_of_str2 = str2[:overlap_length]
+        if end_of_str1 == start_of_str2:
+            best_overlap_length = overlap_length
+            break
+
+    # If found overlap, merge without repeating that part
+    if best_overlap_length > 0:
+        return str1 + str2[best_overlap_length:]
+    else:
+        return str1 + str2
+
+
+def add_to_all_urls(r, all_urls, weight_delta=1):
+    """
+    r: SearchSnippet对象（dict或自定义类）
+    all_urls: dict，key=标准化后的url，value=SearchSnippet对象
+    weight_delta: 权重增量
+    返回值: 如果新加入URL返回1，否则返回0
+    """
+    n_url = normalize_url(r['url'])
+    if not n_url:
+        return 0
+    if n_url not in all_urls:
+        all_urls[n_url] = r.copy()  # 确保新的对象
+        all_urls[n_url]['weight'] = weight_delta
+        return 1
+    else:
+        all_urls[n_url]['weight'] += weight_delta
+        cur_desc = all_urls[n_url]['description']
+        # 合并旧描述和新描述
+        all_urls[n_url]['description'] = smart_merge_strings(cur_desc, r['description'])
+        return 0
