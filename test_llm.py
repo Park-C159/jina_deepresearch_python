@@ -7,9 +7,10 @@ load_dotenv()
 
 client = OpenAI(
     # 若没有配置环境变量，请用ideaLAB的API Key将下行替换为：api_key="xxx",
-    api_key=os.getenv("API_KEY"),
-    base_url=os.getenv("BASE_URL"),
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url=os.getenv("OPENAI_BASE_URL"),
 )
+
 messages = [
     {"role": "system", "content": "你是一位历史研究专家。"},
     {"role": "user", "content": "三大战役各个军队伤亡如何？"}
@@ -22,7 +23,7 @@ completion = client.chat.completions.create(
     # 使用Qwen3开源版模型时，若未启用流式输出，请将下行取消注释，否则会报错
     extra_body={"enable_thinking": True},
 )
-print(completion)
+# print(completion)
 messages.append({
     "role": "assistant",
     "content": "<think>" + completion.choices[0].message.content + "</think>\n" + completion.choices[0].message.content

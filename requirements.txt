@@ -1,9 +1,9 @@
-aiohappyeyeballs @ file:///home/conda/feedstock_root/build_artifacts/aiohappyeyeballs_1741775197943/work
-aiohttp @ file:///Users/runner/miniforge3/conda-bld/aiohttp_1759836019244/work
-aiosignal @ file:///home/conda/feedstock_root/build_artifacts/aiosignal_1751626463503/work
+aiohappyeyeballs
+aiohttp
+aiosignal
 annotated-types==0.7.0
 anyio==4.11.0
-attrs @ file:///home/conda/feedstock_root/build_artifacts/attrs_1759762205280/work
+attrs
 certifi==2025.10.5
 distro==1.9.0
 filelock==3.20.0
@@ -12,12 +12,12 @@ fsspec==2025.9.0
 h11==0.16.0
 httpcore==1.0.9
 httpx==0.28.1
-idna @ file:///home/conda/feedstock_root/build_artifacts/idna_1760286409563/work
+idna
 Jinja2==3.1.6
 jiter==0.11.0
 MarkupSafe==3.0.3
 mpmath==1.3.0
-multidict @ file:///Users/runner/miniforge3/conda-bld/multidict_1751310699512/work
+multidict
 networkx==3.5
 numpy==2.3.3
 openai==2.3.0
@@ -33,6 +33,6 @@ torch==2.8.0
 torchvision==0.23.0
 tqdm==4.67.1
 typing-inspection==0.4.2
-typing_extensions @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_typing_extensions_1756220668/work
+typing_extensions
 wheel==0.45.1
-yarl @ file:///Users/runner/miniforge3/conda-bld/yarl_1749554888018/work
+yarl

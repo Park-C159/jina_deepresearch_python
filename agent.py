@@ -7,7 +7,11 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 
+from tool.date_tools import format_date_range
 from tool.jina_search import search
+from tool.serp_cluster import serp_cluster
+from tool.text_tools import remove_html_tags
+from utils.schemas import MAX_QUERIES_PER_STEP
 from utils.url_tool import *
 
 load_dotenv()
@@ -392,7 +396,57 @@ async def execute_search_queries(
         searched_queries.append(query['q'])
 
         try:
-            clusters = 
+            clusters = await serp_cluster(min_results, context, SchemaGen)
+            for c in clusters:
+                new_knowledge.append(
+                    KnowledgeItem(
+                        question=c.get("question"),
+                        answer=c.get("insight"),
+                        references=getattr(c, "urls", None),
+                        type="url",
+                    )
+                )
+        except Exception as e:
+            log.warning("serpCluster failed:" + str({"error": str(e)}))
+        finally:
+            joined_desc = "; ".join([r.get("description") or "" for r in min_results])
+            side_info = KnowledgeItem(
+                question=f'What do Internet say about "{old_query}"?',
+                answer=remove_html_tags(joined_desc),
+                type="side-info",
+                updated=format_date_range(query) if query.get("tbs") else None,
+            )
+            new_knowledge.append(side_info)
+
+            context.actionTracker.trackAction({
+                "thisStep": {
+                    "action": "search",
+                    "think": "",
+                    "searchRequests": [old_query],
+                }
+            })
+    if len(searched_queries) == 0:
+        if only_hostnames and len(only_hostnames) > 0:
+            log.warning(
+                "No results found for queries: {} on hostnames: {}".format(
+                    ", ".join(filter(None, uniq_q_only)),
+                    ", ".join(only_hostnames),
+                )
+            )
+            context.actionTracker.trackThink(
+                "hostnames_no_results",
+                SchemaGen.languageCode,
+                {"hostnames": ", ".join(only_hostnames)},
+            )
+    else:
+        log.debug(f"Utility/Queries: {utility_score}/{len(searched_queries)}")
+        if len(searched_queries) > MAX_QUERIES_PER_STEP:
+            log.debug('So many queries??? ' + ", ".join(f'"{q}"' for q in searched_queries))
+
+    return {
+        "newKnowledge": new_knowledge,
+        "searchedQueries": searched_queries,
+    }
 
 
 async def test(this_step, all_urls):

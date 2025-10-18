@@ -6,6 +6,7 @@ from typing import Optional, Dict, Any
 from dotenv import load_dotenv
 
 from utils.get_log import get_logger
+from utils.token_tracker import TokenTracker
 
 load_dotenv()
 JINA_API_KEY = os.getenv("JINA_API_KEY")
@@ -31,57 +32,57 @@ class LanguageModelUsage:
         return f"LanguageModelUsage(promptTokens={self.promptTokens}, completionTokens={self.completionTokens}, totalTokens={self.totalTokens})"
 
 
-class TokenTracker:
-    def __init__(self, budget: Optional[int] = None):
-        self.usages: List[Dict[str, Any]] = []
-        self.budget: Optional[int] = budget
-        self._usage_callbacks: List[Callable[[LanguageModelUsage], None]] = []
-
-    def on_usage(self, callback: Callable[[LanguageModelUsage], None]):
-        self._usage_callbacks.append(callback)
-
-    def track_usage(self, tool: str, usage: LanguageModelUsage):
-        u = {'tool': tool, 'usage': usage}
-        self.usages.append(u)
-        # Emit 'usage' event
-        for cb in self._usage_callbacks:
-            cb(usage)
-
-    def get_total_usage(self) -> LanguageModelUsage:
-        acc = LanguageModelUsage()
-        for item in self.usages:
-            usage = item['usage']
-            scaler = 1  # 按原 ts 逻辑
-            acc.promptTokens += usage.promptTokens * scaler
-            acc.completionTokens += usage.completionTokens * scaler
-            acc.totalTokens += usage.totalTokens * scaler
-        return acc
-
-    def get_total_usage_snake_case(self) -> dict:
-        acc = {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
-        for item in self.usages:
-            usage = item['usage']
-            scaler = 1
-            acc['prompt_tokens'] += usage.promptTokens * scaler
-            acc['completion_tokens'] += usage.completionTokens * scaler
-            acc['total_tokens'] += usage.totalTokens * scaler
-        return acc
-
-    def get_usage_breakdown(self) -> Dict[str, int]:
-        acc: Dict[str, int] = {}
-        for item in self.usages:
-            tool = item['tool']
-            usage = item['usage']
-            acc[tool] = acc.get(tool, 0) + usage.totalTokens
-        return acc
-
-    def print_summary(self):
-        breakdown = self.get_usage_breakdown()
-        total = self.get_total_usage()
-        logging.info(f"Token Usage Summary: budget={self.budget}, total={total}, breakdown={breakdown}")
-
-    def reset(self):
-        self.usages = []
+# class TokenTracker:
+#     def __init__(self, budget: Optional[int] = None):
+#         self.usages: List[Dict[str, Any]] = []
+#         self.budget: Optional[int] = budget
+#         self._usage_callbacks: List[Callable[[LanguageModelUsage], None]] = []
+#
+#     def on_usage(self, callback: Callable[[LanguageModelUsage], None]):
+#         self._usage_callbacks.append(callback)
+#
+#     def track_usage(self, tool: str, usage: LanguageModelUsage):
+#         u = {'tool': tool, 'usage': usage}
+#         self.usages.append(u)
+#         # Emit 'usage' event
+#         for cb in self._usage_callbacks:
+#             cb(usage)
+#
+#     def get_total_usage(self) -> LanguageModelUsage:
+#         acc = LanguageModelUsage()
+#         for item in self.usages:
+#             usage = item['usage']
+#             scaler = 1  # 按原 ts 逻辑
+#             acc.promptTokens += usage.promptTokens * scaler
+#             acc.completionTokens += usage.completionTokens * scaler
+#             acc.totalTokens += usage.totalTokens * scaler
+#         return acc
+#
+#     def get_total_usage_snake_case(self) -> dict:
+#         acc = {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
+#         for item in self.usages:
+#             usage = item['usage']
+#             scaler = 1
+#             acc['prompt_tokens'] += usage.promptTokens * scaler
+#             acc['completion_tokens'] += usage.completionTokens * scaler
+#             acc['total_tokens'] += usage.totalTokens * scaler
+#         return acc
+#
+#     def get_usage_breakdown(self) -> Dict[str, int]:
+#         acc: Dict[str, int] = {}
+#         for item in self.usages:
+#             tool = item['tool']
+#             usage = item['usage']
+#             acc[tool] = acc.get(tool, 0) + usage.totalTokens
+#         return acc
+#
+#     def print_summary(self):
+#         breakdown = self.get_usage_breakdown()
+#         total = self.get_total_usage()
+#         logging.info(f"Token Usage Summary: budget={self.budget}, total={total}, breakdown={breakdown}")
+#
+#     def reset(self):
+#         self.usages = []
 
 
 def search(query: Dict[str, Any],
