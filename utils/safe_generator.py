@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional, TypedDict, Protocol
-
-import hjson  # pip install hjson
-
+import os
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, TypedDict, Protocol, Type, TypeVar, Coroutine
+import hjson, openai, instructor
+from instructor import Mode
+from pydantic import BaseModel
+from config.config import get_tool_config, get_model, get_client
 from utils.get_log import get_logger
+from utils.token_tracker import TokenTracker
+
 log = get_logger("safe_generator")
+
+T = TypeVar("T", bound=BaseModel)
+
 
 # ---- 这些依赖请替换为你工程中的真实实现 ----
 # from ai import generate_object as ai_generate_object, LanguageModelUsage, NoObjectGeneratedError, Schema
@@ -20,6 +28,7 @@ class LanguageModelUsage(TypedDict, total=False):
     output_tokens: int
     total_tokens: int
 
+
 class SchemaDict(TypedDict, total=False):
     # JSON Schema 结构（子集）
     type: str
@@ -30,8 +39,10 @@ class SchemaDict(TypedDict, total=False):
     oneOf: List[Any]
     description: str
 
+
 class NoObjectGeneratedErrorBase(Exception):
     """占位异常：需替换为 SDK 的 NoObjectGeneratedError"""
+
     def __init__(self, text: str, usage: Optional[LanguageModelUsage] = None):
         super().__init__("No object generated")
         self.text = text
@@ -40,6 +51,7 @@ class NoObjectGeneratedErrorBase(Exception):
     @classmethod
     def isInstance(cls, err: Exception) -> bool:
         return isinstance(err, cls)
+
 
 # 协议：与 ai.generateObject 对齐（Python 侧假定返回 dict）
 class GenerateObjectProtocol(Protocol):
@@ -51,19 +63,6 @@ class GenerateObjectProtocol(Protocol):
                        temperature: Optional[float] = None) -> Dict[str, Any]:
         ...
 
-# ---- 用于替换的外部函数/对象（占位） ----
-async def ai_generate_object(**kwargs) -> Dict[str, Any]:
-    raise NotImplementedError  # 请替换为真实实现
-
-def getModel(name: str) -> Any:
-    return name  # 示例：真实实现应返回模型句柄
-
-def getToolConfig(name: str) -> Any:
-    class C:  # 简易容器
-        maxTokens = None
-        temperature = 0.0
-    return C()
-
 
 ToolName = str
 Schema = Any  # 允许为 zod 等同物或 JSON Schema dict
@@ -74,19 +73,110 @@ class GenerateObjectResult(TypedDict):
     object: Any
     usage: LanguageModelUsage
 
+
 class GenerateOptions(TypedDict, total=False):
     model: ToolName
     schema: Schema
-    prompt: str
-    system: str
-    messages: List[Any]
+    prompt: str | None
+    system: str | None
+    messages: List[Any] | None
     numRetries: int
 
 
-class TokenTracker:
-    """占位 TokenTracker"""
-    def trackUsage(self, model: str, usage: LanguageModelUsage) -> None:
+def ai_generate_object(
+        *,
+        model: "OpenAI | GenerativeModel",  # 对应 TS 的 model = get_model(model)
+        schema: Type[T],  # 对应 TS 的 schema
+        prompt: Optional[str] = None,
+        system: Optional[str] = None,
+        messages: Optional[List[Dict[str, str]]] = None,
+        maxTokens: Optional[int] = 4096 * 2,
+        temperature: Optional[float] = 0.7,
+):
+    """
+    把 TS 的 generateObject({ model, schema, prompt, system, messages, maxTokens, temperature })
+    原封不动搬到 Python。
+    """
+    # 1. 拿到已绑定好 base_url / api_key 的「可 instructor 化」客户端
+    #    这里假设你前面已经写好 get_openai_client()，返回 openai.OpenAI(...)
+    # 映射表，按需扩展
+
+    client, compatibility, model_name = get_model(model)
+    _MODE_MAP = {
+        "tools": Mode.TOOLS,  # function calling
+        "json": Mode.JSON,  # JSON 模式
+        "json_schema": Mode.JSON_SCHEMA,  # JSON Schema 模式
+        "strict": Mode.MD_JSON,  # 最稳的 Markdown-JSON
+    }
+
+    mode = _MODE_MAP[compatibility] or instructor.Mode.TOOLS
+    wrapped = instructor.from_openai(client, mode=mode)
+
+    # 2. 组装 messages（优先级：messages > prompt+system）
+    if messages is None:
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        if prompt:
+            messages.append({"role": "user", "content": prompt})
+        if not messages:
+            raise ValueError("Either `messages` or (`prompt`/`system`) must be provided")
+
+    # 3. 真正调用
+    obj, completion = wrapped.chat.completions.create_with_completion(
+        model=model_name,
+        response_model=schema,
+        messages=messages,
+        max_tokens=maxTokens,
+        temperature=temperature,
+    )
+    object_dict = obj.model_dump() if isinstance(obj, BaseModel) else obj
+    usage = getattr(completion, "usage", None)
+    input_tokens = getattr(usage, "prompt_tokens", None) if usage else None
+    output_tokens = getattr(usage, "completion_tokens", None) if usage else None
+    total_tokens = getattr(usage, "total_tokens", None) if usage else None
+    finish_reason = None
+    try:
+        finish_reason = completion.choices[0].finish_reason
+    except Exception:
         pass
+    result: Dict[str, Any] = {
+        "object": object_dict,
+        "usage": {
+            "promptTokens": input_tokens,
+            "completionTokens": output_tokens,
+            "totalTokens": total_tokens,
+            "reasoningTokens": getattr(getattr(usage, "completion_tokens_details", None), "reasoning_tokens",
+                                       None) if usage else None,
+            "cachedInputTokens": getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens",
+                                         None) if usage else None,
+        },
+        "finishReason": finish_reason or "stop",
+        "response": {
+            "id": getattr(completion, "id", None),
+            "modelId": getattr(completion, "model", model_name),
+            "timestamp": (
+                datetime.fromtimestamp(getattr(completion, "created", 0), tz=timezone.utc).isoformat()
+                if getattr(completion, "created", None) is not None else None
+            ),
+            "headers": None,
+            "body": None,
+        },
+        "reasoning": None,
+        "warnings": None,
+        "providerMetadata": None,
+    }
+
+    def _to_json_response():
+        return {
+            "status": 200,
+            "headers": {"content-type": "application/json"},
+            "body": {"object": result["object"]},
+        }
+
+    result["toJsonResponse"] = _to_json_response
+
+    return result
 
 
 class ObjectGeneratorSafe:
@@ -94,8 +184,7 @@ class ObjectGeneratorSafe:
         self.token_tracker = token_tracker or TokenTracker()
 
     # 公开方法，与 TS 的 generateObject 对齐
-    async def generate_object(self, options: GenerateOptions) -> GenerateObjectResult:
-
+    async def generate_object(self, options):
         model: ToolName = options.get("model")  # type: ignore
         schema: Schema = options.get("schema")  # type: ignore
         prompt: Optional[str] = options.get("prompt")
@@ -107,25 +196,25 @@ class ObjectGeneratorSafe:
             raise ValueError("Model and schema are required parameters")
 
         try:
-            # 主调用
-            result = await ai_generate_object(
-                model=getModel(model),
+            result = ai_generate_object(
+                model=model,
                 schema=schema,
                 prompt=prompt,
                 system=system,
                 messages=messages,
-                maxTokens=getToolConfig(model).maxTokens,
-                temperature=getToolConfig(model).temperature,
+                maxTokens=get_tool_config(model).get('maxTokens'),
+                temperature=get_tool_config(model).get('temperature'),
             )
+
             usage = result.get("usage", {})
-            self.token_tracker.trackUsage(model, usage)
+            self.token_tracker.track_usage(model, usage)
             return {"object": result.get("object"), "usage": usage}
 
         except Exception as error:
             # 第一次兜底：手动解析错误输出
             try:
                 error_result = await self._handle_generate_object_error(error)
-                self.token_tracker.trackUsage(model, error_result["usage"])
+                self.token_tracker.track_usage(model, error_result["usage"])
                 return error_result
 
             except Exception as parse_error:
@@ -152,7 +241,7 @@ class ObjectGeneratorSafe:
                     try:
                         failed_output = ""
                         if isinstance(parse_error, NoObjectGeneratedErrorBase) or getattr(
-                            type(parse_error), "isInstance", lambda _e: False
+                                type(parse_error), "isInstance", lambda _e: False
                         )(parse_error):
                             failed_output = getattr(parse_error, "text", "") or ""
                             log.debug(f"Failed output: {failed_output}")
@@ -166,17 +255,17 @@ class ObjectGeneratorSafe:
 
                         distilled_schema = self._create_distilled_schema(schema)
 
-                        fallback_result = await ai_generate_object(
-                            model=getModel("fallback"),
+                        fallback_result = ai_generate_object(
+                            model=get_model("fallback"),
                             schema=distilled_schema,
                             prompt=(
                                 "Following the given JSON schema, extract the field from below: \n\n "
                                 f"{failed_output}"
                             ),
-                            temperature=getToolConfig("fallback").temperature,
+                            temperature=get_tool_config("fallback").get("temperature"),
                         )
                         usage = fallback_result.get("usage", {})
-                        self.token_tracker.trackUsage("fallback", usage)
+                        self.token_tracker.track_usage("fallback", usage)
                         log.debug("Distilled schema parse success!")
                         return {
                             "object": fallback_result.get("object"),
@@ -187,7 +276,7 @@ class ObjectGeneratorSafe:
                         # 最后一搏：对 fallback 的错误再做手动解析
                         try:
                             last_chance = await self._handle_generate_object_error(fallback_error)
-                            self.token_tracker.trackUsage("fallback", last_chance["usage"])
+                            self.token_tracker.track_usage("fallback", last_chance["usage"])
                             return last_chance
                         except Exception:
                             log.error("All recovery mechanisms failed")

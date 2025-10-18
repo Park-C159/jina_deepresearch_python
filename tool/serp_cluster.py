@@ -3,6 +3,7 @@ from typing import Any, Dict, List, TypedDict
 from utils.get_log import get_logger
 from utils.safe_generator import ObjectGeneratorSafe
 
+TOOL_NAME = "serpCluster"
 log = get_logger("serp_cluster")
 # ---- 类型占位（可替换为你项目中的真实类型） ----
 class SearchSnippet(TypedDict, total=False):
@@ -27,7 +28,6 @@ def get_prompt(results: List[SearchSnippet]) -> PromptPair:
         "user": f"\n{__import__('json').dumps(results)}\n",
     }
 
-TOOL_NAME = "serpCluster"
 
 async def serp_cluster(
     results: List[SearchSnippet],
@@ -35,22 +35,21 @@ async def serp_cluster(
     schema_gen: Any,      # Schemas
 ) -> List[Dict[str, Any]]:
     """
-    Python 版 serpCluster：调用对象生成器根据 schema 产出聚类结果，
-    并追踪 'think'，返回 clusters 列表。
+    用来把一批搜索结果（SERP items）自动分成若干“主题簇（cluster）”，并为每个簇生成摘要、洞见、链接清单和后续检索建议。
     """
     try:
         generator = ObjectGeneratorSafe(trackers.tokenTracker)
         prompt = get_prompt(results)
         result = await generator.generate_object({
             "model": TOOL_NAME,
-            "schema": schema_gen.getSerpClusterSchema(),
+            "schema": schema_gen,
             "system": prompt["system"],
             "prompt": prompt["user"],
         })
 
         # 追踪思考
         obj = result.get("object", {})
-        trackers.actionTracker.trackThink(obj.get("think"))
+        trackers.actionTracker.track_think(obj.get("think"))
 
         clusters = obj.get("clusters", [])
         log.info(TOOL_NAME, {"clusters": clusters})

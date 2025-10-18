@@ -1,8 +1,11 @@
 # 这是一个示例 Python 脚本。
+import asyncio
 import re, sys
 from typing import List, Dict, Any, Optional
-from pydantic import create_model
+from pydantic import create_model, BaseModel, Field
 
+from tool.serp_cluster import serp_cluster
+from utils.action_tracker import ActionTracker
 from utils.get_log import get_logger
 from utils.url_tool import add_to_all_urls
 
@@ -36,7 +39,6 @@ llm_cfg = {
         "required": ["answer"]
     },
 }
-
 
 
 def messages_cleansing(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -187,7 +189,6 @@ def build_response_schema(
     }
 
 
-
 def json_schema_to_pydantic(schema: Dict[str, Any]) -> Any:
     """极简实现：仅支持顶层字段全 string 类型。"""
     fields = {}
@@ -199,45 +200,61 @@ def json_schema_to_pydantic(schema: Dict[str, Any]) -> Any:
             raise TypeError(f"Unsupported type: {typ}")
     return create_model("DynamicSchema", **fields)
 
+
 from tool.jina_search import *
 
+
+async def main():
+    class TrackerContext:
+        def __init__(self):
+            self.tokenTracker = TokenTracker()
+            self.actionTracker = ActionTracker()
+
+    # 最里层单条 cluster
+    class ClusterItem(BaseModel):
+        question: str
+        summary: str
+        insight: str
+        urls: List[str]
+        search_advice: str = ""
+
+    # 最外层响应
+    class SerpClusterResponse(BaseModel):
+        think: str = Field(default="", description="模型思考过程")
+        clusters: List[ClusterItem]
+
+    trackers = TrackerContext()
+    schema_gen = SerpClusterResponse
+    results = [
+        {
+            "title": "Apple unveils new M-series chip",
+            "url": "https://news.example.com/apple-m3",
+            "description": "Apple announced M3 with GPU improvements and efficiency gains...",
+            "weight": 1,
+            "date": "2025-10-10",
+        },
+        {
+            "title": "NVIDIA GTC 2025 keynote highlights",
+            "url": "https://blog.example.com/gtc-2025",
+            "description": "Key takeaways: AI hardware roadmap, inference platforms, ecosystem...",
+            "weight": 1,
+            "date": "2025-10-12",
+        },
+        {
+            "title": "M3 benchmark roundup",
+            "url": "https://review.example.com/m3-benchmarks",
+            "description": "Independent benchmarks show improved GPU performance and memory bandwidth...",
+            "weight": 1,
+            "date": "2025-10-11",
+        },
+    ]
+    clusters = await serp_cluster(results, trackers, schema_gen)
+    for c in clusters:
+        print(type(c), c)
+        print(c.get("question"))
+        print(c.get("insight"))
 
 
 # 按装订区域中的绿色按钮以运行脚本。
 if __name__ == '__main__':
-    all_urls = {'https://example.com/index': {'url': 'https://EXAMPLE.com/index ', 'description': 'Welcome page', 'weight': 3}}
-    snippet1 = {'url': 'https://example.com/index', 'description': 'Intro page', 'weight': 1}
-    snippet2 = {'url': 'https://EXAMPLE.com/index ', 'description': 'Welcome page', 'weight': 1}
-
-    add_to_all_urls(snippet1, all_urls, 2)
-    add_to_all_urls(snippet2, all_urls, 3)
-    print(all_urls)
-
-
-    # log = get_logger(__name__)
-    # log.info('[chat/comletions] Start: ' + str(llm_cfg))
-    #
-    # cleaned_message = messages_cleansing(messages)
-    # is_valid = validate_messages(cleaned_message)
-    # if is_valid:
-    #     log.warning(is_valid)
-    #     assert is_valid
-    #
-    # # 3. 再带上 JSON Schema，让函数生成 Pydantic 模型
-    # json_schema = {
-    #     "type": "object",
-    #     "properties": {
-    #         "answer": {"type": "string"},
-    #         "confidence": {"type": "string"}
-    #     },
-    #     "required": ["answer"]
-    # }
-    #
-    # cfg = build_response_schema(
-    #     budget_tokens=llm_cfg.get("token_budget"),
-    #     max_attempts=llm_cfg.get("max_attempts"),
-    #     response_format_json_schema=llm_cfg.get("response_schema"),
-    # )
-    #
-    # print(cfg)
-# 访问 https://www.jetbrains.com/help/pycharm/ 获取 PyCharm 帮助
+    asyncio.run(main())
