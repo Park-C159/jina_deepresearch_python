@@ -139,5 +139,5 @@ def search(query: Dict[str, Any],
 
     except Exception as e:
         log.error(f"Search error: {e}")
-        raise
+        return {}
 

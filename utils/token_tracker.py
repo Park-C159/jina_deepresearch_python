@@ -4,6 +4,8 @@ from collections import defaultdict
 import logging
 import contextvars
 
+from utils.action_tracker import EventEmitter
+
 logger = logging.getLogger("TokenTracker")
 if not logger.handlers:
     handler = logging.StreamHandler()
@@ -39,22 +41,7 @@ class TokenUsage:
     usage: LanguageModelUsage
 
 
-class _EventEmitter:
-    def __init__(self) -> None:
-        self._listeners: DefaultDict[str, List[Callable]] = defaultdict(list)
-
-    def on(self, event: str, fn: Callable) -> None:
-        self._listeners[event].append(fn)
-
-    def emit(self, event: str, *args, **kwargs) -> None:
-        for fn in list(self._listeners.get(event, [])):
-            try:
-                fn(*args, **kwargs)
-            except Exception:  # 避免单个监听器阻断其他监听器
-                logger.exception("Error in event listener for '%s'", event)
-
-
-class TokenTracker(_EventEmitter):
+class TokenTracker(EventEmitter):
     def __init__(self, budget: Optional[int] = None) -> None:
         super().__init__()
         self.usages = []
