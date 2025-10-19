@@ -6,3 +6,116 @@
 2025-10-16 11:46:13,581 | ERROR    | search | search:137 | Search error: 401 Client Error: Unauthorized for url: https://r.jina.ai/
 2025-10-16 11:46:29,278 | ERROR    | search | search:137 | Search error: 401 Client Error: Unauthorized for url: https://r.jina.ai/
 2025-10-16 11:47:28,993 | DEBUG    | search | search:125 | Search results metadata: {'engine': 'google', 'query': 'chatgpt history', 'latency': 712, 'credits': 1, 'num_results': 3}
+2025-10-19 14:03:09,140 | ERROR    | search | search:141 | Search error: HTTPSConnectionPool(host='svip.jina.ai', port=443): Read timed out. (read timeout=10)
+2025-10-19 14:05:23,902 | ERROR    | search | search:142 | Search error: HTTPSConnectionPool(host='svip.jina.ai', port=443): Read timed out. (read timeout=10)
+2025-10-19 14:07:17,492 | ERROR    | search | search:141 | Search error: Invalid response format
+2025-10-19 14:08:54,877 | ERROR    | search | search:142 | Search error: Invalid response format
+2025-10-19 14:10:41,696 | ERROR    | search | search:142 | Search error: Invalid response format
+2025-10-19 14:14:47,096 | ERROR    | search | search:142 | Search error: Invalid response format
+2025-10-19 14:16:12,288 | ERROR    | search | search:142 | Search error: Invalid response format
+2025-10-19 14:17:01,669 | DEBUG    | search | search:127 | Search results metadata: {'query': 'nvidia gtc', 'latency': 454, 'num_results': 30, 'credits': 1}
+2025-10-19 14:17:51,070 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 549, 'num_results': 30, 'credits': 1}
+2025-10-19 14:18:35,437 | DEBUG    | search | search:127 | Search results metadata: {'query': 'nvidia gtc', 'latency': 626, 'num_results': 30, 'credits': 1}
+2025-10-19 14:20:10,635 | DEBUG    | search | search:127 | Search results metadata: {'query': 'nvidia gtc', 'latency': 522, 'num_results': 30, 'credits': 1}
+2025-10-19 14:20:48,477 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 690, 'num_results': 30, 'credits': 1}
+2025-10-19 14:21:51,493 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 541, 'num_results': 30, 'credits': 1}
+2025-10-19 14:22:36,173 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 473, 'num_results': 30, 'credits': 1}
+2025-10-19 14:23:36,033 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 670, 'num_results': 30, 'credits': 1}
+2025-10-19 14:24:02,193 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 471, 'num_results': 30, 'credits': 1}
+2025-10-19 14:26:38,010 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 449, 'num_results': 30, 'credits': 1}
+2025-10-19 14:27:08,437 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 557, 'num_results': 30, 'credits': 1}
+2025-10-19 14:52:59,060 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 467, 'num_results': 30, 'credits': 1}
+2025-10-19 15:01:23,966 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 509, 'num_results': 30, 'credits': 1}
+2025-10-19 15:13:57,832 | ERROR    | search | search:141 | Search error: HTTPSConnectionPool(host='svip.jina.ai', port=443): Max retries exceeded with url: / (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1010)')))
+2025-10-19 15:14:03,853 | ERROR    | search | search:141 | Search error: HTTPSConnectionPool(host='svip.jina.ai', port=443): Max retries exceeded with url: / (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1010)')))
+2025-10-19 15:14:26,980 | ERROR    | search | search:141 | Search error: HTTPSConnectionPool(host='svip.jina.ai', port=443): Max retries exceeded with url: / (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1010)')))
+2025-10-19 15:14:32,999 | ERROR    | search | search:141 | Search error: HTTPSConnectionPool(host='svip.jina.ai', port=443): Max retries exceeded with url: / (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1010)')))
+2025-10-19 15:14:49,322 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 408, 'num_results': 30, 'credits': 1}
+2025-10-19 15:22:51,956 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 480, 'num_results': 30, 'credits': 1}
+2025-10-19 15:30:37,762 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 560, 'num_results': 30, 'credits': 1}
+2025-10-19 15:35:08,356 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 680, 'num_results': 30, 'credits': 1}
+2025-10-19 15:45:28,578 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 551, 'num_results': 30, 'credits': 1}
+2025-10-19 15:52:07,567 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 606, 'num_results': 30, 'credits': 1}
+2025-10-19 15:52:51,234 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 587, 'num_results': 30, 'credits': 1}
+2025-10-19 15:55:17,759 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 544, 'num_results': 30, 'credits': 1}
+2025-10-19 15:59:53,121 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 522, 'num_results': 30, 'credits': 1}
+2025-10-19 16:01:06,252 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 544, 'num_results': 30, 'credits': 1}
+2025-10-19 16:03:59,255 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 547, 'num_results': 30, 'credits': 1}
+2025-10-19 16:04:30,220 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 492, 'num_results': 30, 'credits': 1}
+2025-10-19 16:05:18,519 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 512, 'num_results': 30, 'credits': 1}
+2025-10-19 16:14:29,257 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 435, 'num_results': 30, 'credits': 1}
+2025-10-19 16:15:26,815 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 534, 'num_results': 30, 'credits': 1}
+2025-10-19 16:16:58,594 | DEBUG    | search | search:126 | Search results metadata: {'query': 'nvidia gtc', 'latency': 480, 'num_results': 30, 'credits': 1}
+2025-10-19 16:24:01,892 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 625, 'num_results': 30, 'credits': 1}
+2025-10-19 16:24:40,312 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 547, 'num_results': 30, 'credits': 1}
+2025-10-19 16:27:56,359 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 495, 'num_results': 30, 'credits': 1}
+2025-10-19 16:32:25,738 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 359, 'num_results': 30, 'credits': 1}
+2025-10-19 16:42:02,005 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 487, 'num_results': 30, 'credits': 1}
+2025-10-19 16:42:58,210 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 587, 'num_results': 30, 'credits': 1}
+2025-10-19 16:44:47,856 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 834, 'num_results': 30, 'credits': 1}
+2025-10-19 16:48:03,032 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 344, 'num_results': 30, 'credits': 1}
+2025-10-19 16:55:05,956 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 675, 'num_results': 30, 'credits': 1}
+2025-10-19 17:00:22,818 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 428, 'num_results': 30, 'credits': 1}
+2025-10-19 17:07:53,798 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 343, 'num_results': 30, 'credits': 1}
+2025-10-19 17:17:30,344 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 394, 'num_results': 30, 'credits': 1}
+2025-10-19 17:19:09,891 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 432, 'num_results': 30, 'credits': 1}
+2025-10-19 17:50:55,000 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 353, 'num_results': 30, 'credits': 1}
+2025-10-19 17:51:22,527 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 543, 'num_results': 30, 'credits': 1}
+2025-10-19 17:55:38,708 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 426, 'num_results': 30, 'credits': 1}
+2025-10-19 18:00:23,715 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 407, 'num_results': 30, 'credits': 1}
+2025-10-19 18:04:43,732 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 440, 'num_results': 30, 'credits': 1}
+2025-10-19 18:59:30,101 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 600, 'num_results': 30, 'credits': 1}
+2025-10-19 19:01:29,231 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 505, 'num_results': 30, 'credits': 1}
+2025-10-19 19:03:29,116 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 398, 'num_results': 30, 'credits': 1}
+2025-10-19 19:06:30,951 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 328, 'num_results': 30, 'credits': 1}
+2025-10-19 19:09:26,204 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 551, 'num_results': 30, 'credits': 1}
+2025-10-19 19:12:21,538 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 398, 'num_results': 30, 'credits': 1}
+2025-10-19 19:16:49,844 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 601, 'num_results': 30, 'credits': 1}
+2025-10-19 19:19:20,559 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 590, 'num_results': 30, 'credits': 1}
+2025-10-19 19:21:11,454 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 489, 'num_results': 30, 'credits': 1}
+2025-10-19 19:24:22,043 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 567, 'num_results': 30, 'credits': 1}
+2025-10-19 19:29:00,369 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 534, 'num_results': 30, 'credits': 1}
+2025-10-19 19:31:44,140 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 535, 'num_results': 30, 'credits': 1}
+2025-10-19 19:34:38,509 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 513, 'num_results': 30, 'credits': 1}
+2025-10-19 19:36:03,654 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 423, 'num_results': 30, 'credits': 1}
+2025-10-19 19:42:33,133 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 395, 'num_results': 30, 'credits': 1}
+2025-10-19 19:45:01,864 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 581, 'num_results': 30, 'credits': 1}
+2025-10-19 19:49:28,050 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 448, 'num_results': 30, 'credits': 1}
+2025-10-19 19:52:12,293 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 602, 'num_results': 30, 'credits': 1}
+2025-10-19 20:01:06,307 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 433, 'num_results': 30, 'credits': 1}
+2025-10-19 20:05:48,981 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 465, 'num_results': 30, 'credits': 1}
+2025-10-19 20:09:03,118 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 561, 'num_results': 30, 'credits': 1}
+2025-10-19 20:12:17,972 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 488, 'num_results': 30, 'credits': 1}
+2025-10-19 20:14:54,499 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 670, 'num_results': 30, 'credits': 1}
+2025-10-19 20:16:39,189 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 913, 'num_results': 30, 'credits': 1}
+2025-10-19 20:24:25,252 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 674, 'num_results': 30, 'credits': 1}
+2025-10-19 20:25:12,299 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 541, 'num_results': 30, 'credits': 1}
+2025-10-19 20:28:05,517 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 620, 'num_results': 30, 'credits': 1}
+2025-10-19 20:28:54,913 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 557, 'num_results': 30, 'credits': 1}
+2025-10-19 20:37:12,043 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？ 最新 M芯', 'latency': 596, 'num_results': 30, 'credits': 1}
+2025-10-19 20:39:38,458 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 441, 'num_results': 30, 'credits': 1}
+2025-10-19 20:40:24,329 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？ 最新 M芯', 'latency': 635, 'num_results': 30, 'credits': 1}
+2025-10-19 20:55:56,033 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 615, 'num_results': 30, 'credits': 1}
+2025-10-19 20:56:37,057 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 501, 'num_results': 30, 'credits': 1}
+2025-10-19 20:58:00,040 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 408, 'num_results': 30, 'credits': 1}
+2025-10-19 20:59:00,712 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 422, 'num_results': 30, 'credits': 1}
+2025-10-19 21:00:59,739 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 642, 'num_results': 30, 'credits': 1}
+2025-10-19 21:02:02,280 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 620, 'num_results': 30, 'credits': 1}
+2025-10-19 21:03:52,952 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 584, 'num_results': 30, 'credits': 1}
+2025-10-19 21:04:34,520 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 552, 'num_results': 30, 'credits': 1}
+2025-10-19 21:08:29,194 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 532, 'num_results': 30, 'credits': 1}
+2025-10-19 21:09:25,888 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 675, 'num_results': 30, 'credits': 1}
+2025-10-19 21:11:29,544 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 601, 'num_results': 30, 'credits': 1}
+2025-10-19 21:12:49,915 | ERROR    | search | search:141 | Search error: HTTPSConnectionPool(host='svip.jina.ai', port=443): Read timed out. (read timeout=10)
+2025-10-19 21:17:10,101 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 503, 'num_results': 30, 'credits': 1}
+2025-10-19 21:19:15,170 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 545, 'num_results': 30, 'credits': 1}
+2025-10-19 21:25:15,700 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 615, 'num_results': 30, 'credits': 1}
+2025-10-19 21:26:01,481 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 435, 'num_results': 30, 'credits': 1}
+2025-10-19 21:32:32,087 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 516, 'num_results': 30, 'credits': 1}
+2025-10-19 21:33:14,959 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 786, 'num_results': 30, 'credits': 1}
+2025-10-19 21:34:45,210 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 1009, 'num_results': 30, 'credits': 1}
+2025-10-19 21:35:36,606 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 573, 'num_results': 30, 'credits': 1}
+2025-10-19 21:41:21,231 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 438, 'num_results': 30, 'credits': 1}
+2025-10-19 21:51:14,272 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 607, 'num_results': 30, 'credits': 1}
+2025-10-19 21:51:57,362 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 876, 'num_results': 30, 'credits': 1}
+2025-10-19 21:52:40,444 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 371, 'num_results': 30, 'credits': 1}

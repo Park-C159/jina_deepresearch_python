@@ -2,6 +2,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
+from pprint import pprint
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
@@ -11,7 +12,9 @@ from tool.date_tools import format_date_range
 from tool.jina_search import search
 from tool.serp_cluster import serp_cluster
 from tool.text_tools import remove_html_tags
-from utils.schemas import MAX_QUERIES_PER_STEP
+from utils.action_tracker import ActionTracker
+from utils.schemas import MAX_QUERIES_PER_STEP, LANGUAGE_CODE
+from utils.token_tracker import TokenTracker
 from utils.url_tool import *
 
 load_dotenv()
@@ -315,7 +318,6 @@ async def execute_search_queries(
         keywords_queries: List[Dict[str, Any]],
         context: Any,
         all_urls: Dict[str, Dict[str, Any]],
-        SchemaGen: Any,
         web_contents: Dict[str, Dict[str, Any]],
         only_hostnames: Optional[List[str]] = None,
         search_provider: Optional[str] = None,
@@ -325,9 +327,9 @@ async def execute_search_queries(
     uniq_q_only = [q['q'] for q in keywords_queries]
     new_knowledge = []
     searched_queries = []
-    context.action_tracker.track_think(
+    context.actionTracker.track_think(
         'search_for',
-        SchemaGen.language_code,
+        LANGUAGE_CODE,
         {'keywords': ', '.join(uniq_q_only)},
     )
 
@@ -338,7 +340,6 @@ async def execute_search_queries(
         old_query = query['q']
         if only_hostnames and len(only_hostnames) > 0:
             query['q'] = f"{query['q']} site:{' OR site:'.join(only_hostnames)}"
-
         try:
             log.debug('Search query:', {'query': query})
             provider = search_provider or SEARCH_PROVIDER
@@ -364,7 +365,8 @@ async def execute_search_queries(
             log.error(f"{SEARCH_PROVIDER} search failed for query:" + str({'query': query, 'error': e}))
 
             # 401 错误时中止
-            if hasattr(e, 'response') and hasattr(e.response, 'status') and e.response.status == 401 and provider in ('jina', 'arxiv'):
+            if hasattr(e, 'response') and hasattr(e.response, 'status') and e.response.status == 401 and provider in (
+            'jina', 'arxiv'):
                 raise Exception('Unauthorized Jina API key')
             continue
         finally:
@@ -396,7 +398,8 @@ async def execute_search_queries(
         searched_queries.append(query['q'])
 
         try:
-            clusters = await serp_cluster(min_results, context, SchemaGen)
+            clusters = await serp_cluster(min_results, context)
+
             for c in clusters:
                 new_knowledge.append(
                     KnowledgeItem(
@@ -418,13 +421,14 @@ async def execute_search_queries(
             )
             new_knowledge.append(side_info)
 
-            context.actionTracker.trackAction({
+            context.actionTracker.track_action({
                 "thisStep": {
                     "action": "search",
                     "think": "",
                     "searchRequests": [old_query],
                 }
             })
+
     if len(searched_queries) == 0:
         if only_hostnames and len(only_hostnames) > 0:
             log.warning(
@@ -435,7 +439,7 @@ async def execute_search_queries(
             )
             context.actionTracker.trackThink(
                 "hostnames_no_results",
-                SchemaGen.languageCode,
+                LANGUAGE_CODE,
                 {"hostnames": ", ".join(only_hostnames)},
             )
     else:
@@ -449,21 +453,21 @@ async def execute_search_queries(
     }
 
 
-async def test(this_step, all_urls):
-    from pprint import pprint
-    await update_references(this_step, all_urls)
-    pprint(this_step)
+async def test(keywords_queries, context, all_urls, web_contents, only_hostnames=None):
+    result = await execute_search_queries(
+        keywords_queries=keywords_queries,
+        context=context,
+        all_urls=all_urls,
+        web_contents=web_contents,
+        search_provider="jina",
+        meta=None
+    )
+    # pprint(result)
 
 
 if __name__ == "__main__":
-    prompt = get_prompt(
-        context=["searched: 'life meaning'", "visited: https://example.com/life"],
-        all_keywords=["meaning of life", "purpose philosophy"],
-        allow_search=True,
-        beast_mode=True,
-    )
     # 测试数据
-    this_step = {
+    web_contents = {
         "references": [
             {
                 "url": "https://example.com/news/123",
@@ -483,24 +487,21 @@ if __name__ == "__main__":
             },
         ]
     }
-    all_urls = {
-        "example.com/news/123": {
-            "title": "First Example News",
-            "description": "Describes amazing event.",
-            "date": "2022-05-01T08:00:00Z"
-        },
-        "another-site.org/info": {
-            "title": "Another Site Info",
-            "description": "Information page.",
-            "date": "2023-09-09T09:00:00Z"
-        },
-        "example.com/news/456": {
-            "title": "Second News",
-            "description": "Update on previous news!",
-            "date": "2024-05-05T12:00:00Z"
-        }
-    }
-    asyncio.run(test(this_step, all_urls))
+    all_urls = {}
+    keywords_queries = [
+        {"q": "苹果最新的M系列芯片，都有哪些优点？"},
+        {"q": "英伟达最新芯片是什么？有哪些优缺点？"},
+    ]
+
+
+    class TrackerContext:
+        def __init__(self):
+            self.tokenTracker = TokenTracker()
+            self.actionTracker = ActionTracker()
+
+
+    context = TrackerContext()
+    asyncio.run(test(keywords_queries, context, all_urls, web_contents))
 
     # print(prompt["system"])
 

@@ -1,11 +1,19 @@
-from pydantic import BaseModel, Field
+from typing import List, Type
+from pydantic import BaseModel, Field, field_validator
 
 from utils.get_log import get_logger
-from utils.safe_generator import ObjectGeneratorSafe
 
 MAX_QUERIES_PER_STEP = 5
-
+MAX_CLUSTERS = 5
+LANGUAGE_STYLE = 'formal English'
+LANGUAGE_CODE = 'en'
+SEARCH_LANGUAGE_CODE = None
 log = get_logger("schemas")
+
+
+def get_language_prompt():
+    return (f'Must in the first-person in "lang:{LANGUAGE_CODE}"; '
+            f'in the style of "LANGUAGE_STYLE"')
 
 
 def getLanguagePrompt(question: str):
@@ -101,33 +109,56 @@ class LanguageResult(BaseModel):
     lang_style: str = Field(..., max_length=100, description="[vibe & tone] in [what language]")
 
 
-class Schemas:
+class Cluster(BaseModel):
+    question: str = Field(
+        ...,
+        max_length=100,
+        description=(
+            'What concrete and specific question this cluster answers. '
+            'Should not be general question like "where can I find [what...]"'
+        ),
+    )
+    insight: str = Field(
+        ...,
+        max_length=200,
+        description=(
+            'Summary and list key numbers, data, soundbites, and insights that '
+            'worth to be highlighted. End with an actionable advice such as '
+            '"Visit these URLs if you want to understand [what...]". '
+            'Do not use "This cluster..."'
+        ),
+    )
+    urls: List[str]
 
-    def __init__(self):
-        self.languageStyle = 'formal English'
-        self.languageCode = 'en'
-        self.searchLanguageCode = None
 
-    async def set_language(self, query):
-        if languageISO6391Map[query]:
-            self.languageCode = query
-            self.languageStyle = f'formal ${languageISO6391Map[query]}'
-            return
+class ClusterItem(BaseModel):
+    question: str = Field(
+        ...,
+        max_length=100,
+        description=(
+            'What concrete and specific question this cluster answers. '
+            'Should not be general question like "where can I find [what...]"'
+        ),
+    )
+    insight: str = Field(
+        ...,
+        max_length=200,
+        description=(
+            'Summary and list key numbers, data, soundbites, and insights that '
+            'worth to be highlighted. End with an actionable advice such as '
+            '"Visit these URLs if you want to understand [what...]". '
+            'Do not use "This cluster..."'
+        ),
+    )
+    urls: List[str]
 
-        prompt = getLanguagePrompt(query[:100])
-        generator = ObjectGeneratorSafe()
 
-        result = await generator.generate_object({
-            "model": 'evaluator',
-            "schema": self.get_language_schema(),
-            "system": prompt.get("system"),
-            "prompt": prompt.get("user"),
-        })
-
-        self.languageCode = result.get("lang_code")
-        self.languageStyle = result.get("lang_style")
-        log.debug(f"language: ${self.languageCode} -> ${self.languageStyle}")
-
-    # ---------------- 各组 schema ----------------
-    def get_language_schema(self) -> type[BaseModel]:
-        return LanguageResult
+class SerpClusterPayload(BaseModel):
+    think: str = Field(
+        max_length=500,
+        description=(
+            f"Short explain of why you group the search results like this. "
+            f"{get_language_prompt()}"
+        )
+    )
+    clusters: List[ClusterItem]

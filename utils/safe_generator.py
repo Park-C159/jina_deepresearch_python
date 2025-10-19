@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, TypedDict, Protocol, Type, TypeVar, Coroutine
 import hjson, openai, instructor
 from instructor import Mode
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from config.config import get_tool_config, get_model, get_client
 from utils.get_log import get_logger
 from utils.token_tracker import TokenTracker
@@ -85,13 +85,13 @@ class GenerateOptions(TypedDict, total=False):
 
 def ai_generate_object(
         *,
-        model: "OpenAI | GenerativeModel",  # 对应 TS 的 model = get_model(model)
-        schema: Type[T],  # 对应 TS 的 schema
-        prompt: Optional[str] = None,
-        system: Optional[str] = None,
-        messages: Optional[List[Dict[str, str]]] = None,
-        maxTokens: Optional[int] = 4096 * 2,
-        temperature: Optional[float] = 0.7,
+        model,  # 对应 TS 的 model = get_model(model)
+        schema,
+        prompt=None,
+        system=None,
+        messages=None,
+        maxTokens=4096 * 2,
+        temperature=0.7,
 ):
     """
     把 TS 的 generateObject({ model, schema, prompt, system, messages, maxTokens, temperature })
@@ -122,7 +122,6 @@ def ai_generate_object(
         if not messages:
             raise ValueError("Either `messages` or (`prompt`/`system`) must be provided")
 
-    # 3. 真正调用
     obj, completion = wrapped.chat.completions.create_with_completion(
         model=model_name,
         response_model=schema,
@@ -135,11 +134,10 @@ def ai_generate_object(
     input_tokens = getattr(usage, "prompt_tokens", None) if usage else None
     output_tokens = getattr(usage, "completion_tokens", None) if usage else None
     total_tokens = getattr(usage, "total_tokens", None) if usage else None
-    finish_reason = None
     try:
-        finish_reason = completion.choices[0].finish_reason
-    except Exception:
-        pass
+        finish_reason = getattr(completion.choices[0], "finish_reason", None)
+    except AttributeError:
+        finish_reason = None
     result: Dict[str, Any] = {
         "object": object_dict,
         "usage": {
@@ -167,14 +165,11 @@ def ai_generate_object(
         "providerMetadata": None,
     }
 
-    def _to_json_response():
-        return {
-            "status": 200,
-            "headers": {"content-type": "application/json"},
-            "body": {"object": result["object"]},
-        }
-
-    result["toJsonResponse"] = _to_json_response
+    result["toJsonResponse"] = {
+        "status": 200,
+        "headers": {"content-type": "application/json"},
+        "body": {"object": result["object"]},
+    }
 
     return result
 
