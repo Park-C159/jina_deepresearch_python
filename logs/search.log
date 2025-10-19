@@ -119,3 +119,5 @@
 2025-10-19 21:51:14,272 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 607, 'num_results': 30, 'credits': 1}
 2025-10-19 21:51:57,362 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 876, 'num_results': 30, 'credits': 1}
 2025-10-19 21:52:40,444 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 371, 'num_results': 30, 'credits': 1}
+2025-10-19 21:55:05,788 | DEBUG    | search | search:126 | Search results metadata: {'query': '苹果最新的M系列芯片，都有哪些优点？', 'latency': 385, 'num_results': 30, 'credits': 1}
+2025-10-19 21:55:37,926 | DEBUG    | search | search:126 | Search results metadata: {'query': '英伟达最新芯片是什么？有哪些优缺点？', 'latency': 617, 'num_results': 30, 'credits': 1}

@@ -159,20 +159,15 @@ class ActionTracker(EventEmitter):
         lang: str | None = None,
         params: Dict[str, Any] | None = None,
     ) -> None:
-        print("tracking think", think)
         if lang is not None:
             think = get_i18n_text(think, lang, params)
 
         # 更新 think 并清空 URLTargets（与 TS 侧一致）
         new_step = self._state.thisStep.copy()
-        print("tracking think2", think)
         new_step.think = think
-        print("tracking think3", think)
         new_step.URLTargets = []
-        print("tracking think4", think)
 
         self._state.thisStep = new_step
-        print("tracking think5", think)
         self.emit("action", self._state.thisStep)
 
     def get_state(self) -> ActionState:
