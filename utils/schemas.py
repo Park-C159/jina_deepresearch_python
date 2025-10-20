@@ -68,6 +68,17 @@ Evaluation: {
         "user": question
     }
 
+def set_langugae(query):
+    global SEARCH_LANGUAGE_CODE, LANGUAGE_STYLE, LANGUAGE_CODE
+    if languageISO6391Map[query]:
+        LANGUAGE_CODE = query
+        LANGUAGE_STYLE = 'formal English'
+        return
+def set_search_langugae_code(search_languge_code):
+    global SEARCH_LANGUAGE_CODE, LANGUAGE_STYLE, LANGUAGE_CODE
+    SEARCH_LANGUAGE_CODE = search_languge_code
+    return
+
 
 languageISO6391Map = {
     'en': 'English',
