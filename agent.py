@@ -1,6 +1,4 @@
-import logging
 import os
-import re
 from dataclasses import dataclass
 from pprint import pprint
 from typing import Optional, List, Dict, Any
@@ -13,7 +11,8 @@ from tool.jina_search import search
 from tool.serp_cluster import serp_cluster
 from tool.text_tools import remove_html_tags
 from utils.action_tracker import ActionTracker
-from utils.schemas import MAX_QUERIES_PER_STEP, LANGUAGE_CODE
+from utils.safe_generator import ObjectGeneratorSafe
+from utils.schemas import MAX_QUERIES_PER_STEP, LANGUAGE_CODE, set_langugae, set_search_langugae_code
 from utils.token_tracker import TokenTracker
 from utils.url_tool import *
 
@@ -311,7 +310,7 @@ async def update_references(this_step: dict, all_urls: Dict[str, dict]):
             ref['dateTime'] = results[result_idx] or ''
             result_idx += 1
 
-    logging.debug('Updated references:', {'references': this_step['references']})
+    log.debug('Updated references:', {'references': this_step['references']})
 
 
 async def execute_search_queries(
@@ -451,6 +450,62 @@ async def execute_search_queries(
         "newKnowledge": new_knowledge,
         "searchedQueries": searched_queries,
     }
+
+class TrackerContext:
+    def __init__(self):
+        self.tokenTracker = TokenTracker()
+        self.actionTracker = ActionTracker()
+
+async def get_response(
+        question,
+        search_languge_code,
+        search_provider,
+        with_inmages=False,
+        token_budget = 1000000,
+        existing_context = 2,
+        messages=[],
+        num_returned_urls=100,
+        no_direct_answer=False,
+        boost_hostnames=[],
+        only_hostnames=[],
+        max_ref = 10,
+        min_rel_score=0.8,
+        language_code=None,
+        team_size=1
+):
+    step = 0
+    total_step = 0
+    all_context = []
+    def update_context(s):
+        all_context.append(s)
+    if messages is not None:
+        messages = [m for m in messages if m.get("role") != 'system']
+    question = question.strip() if question is not None else None
+    if messages and len(messages) > 0:
+        last_content = messages[-1].get("content")
+        if isinstance(last_content, str):
+            question = last_content.strip()
+        elif isinstance(last_content, dict) and isinstance(last_content, list):
+            # 筛选出 type 为 'text' 的所有内容
+            text_contents = [c for c in last_content if c.get('type') == 'text']
+
+            # 取最后一个（如果有），取其 'text' 字段，否则空字符串
+            question = text_contents[-1]['text'] if text_contents else ''
+    else:
+        messages = [{'role': 'user', 'content': question.strip()}]
+
+    set_langugae(language_code or question)
+    if search_languge_code is not None:
+        set_search_langugae_code(search_languge_code)
+
+    context = TrackerContext()
+    context.tokenTracker = getattr(existing_context, 'tokenTracker',
+                                   TokenTracker(token_budget)) if existing_context is not None else TokenTracker(token_budget)
+    context.actionTracker = getattr(existing_context, 'actionTracker',
+                                    ActionTracker()) if existing_context is not None else ActionTracker()
+
+    generator = ObjectGeneratorSafe(context.tokenTracker)
+
 
 
 async def test(keywords_queries, context, all_urls, web_contents, only_hostnames=None):
