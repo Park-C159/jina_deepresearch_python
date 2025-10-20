@@ -323,7 +323,7 @@ async def execute_search_queries(
         search_provider: Optional[str] = None,
         meta: Optional[str] = None
 ):
-    log = get_logger(__name__)
+    log = get_logger("execute_search_queries")
     uniq_q_only = [q['q'] for q in keywords_queries]
     new_knowledge = []
     searched_queries = []
