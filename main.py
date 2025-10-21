@@ -4,6 +4,7 @@ import re, sys
 from typing import List, Dict, Any, Optional
 from pydantic import create_model, BaseModel, Field
 
+from tool.jina_rerank import rerank_documents
 from tool.serp_cluster import serp_cluster
 from utils.action_tracker import ActionTracker
 from utils.get_log import get_logger
@@ -256,5 +257,13 @@ async def main():
 
 
 # 按装订区域中的绿色按钮以运行脚本。
-if __name__ == '__main__':
-    asyncio.run(main())
+# if __name__ == '__main__':
+#     asyncio.run(main())
+# 如果脚本直接运行，简单测试
+if __name__ == "__main__":
+    docs = ["什么是微积分", "牛顿发明了微积分", "莱布尼兹也独立发明了微积分"]
+    try:
+        ranked = asyncio.run(rerank_documents("谁发明了微积分", docs))
+        print(ranked)
+    except Exception as e:
+        print("Reranking error:", e)

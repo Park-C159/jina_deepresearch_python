@@ -7,12 +7,14 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 from tool.date_tools import format_date_range
+from tool.evaluator import evaluate_question
 from tool.jina_search import search
 from tool.serp_cluster import serp_cluster
 from tool.text_tools import remove_html_tags
 from utils.action_tracker import ActionTracker
 from utils.safe_generator import ObjectGeneratorSafe
-from utils.schemas import MAX_QUERIES_PER_STEP, LANGUAGE_CODE, set_langugae, set_search_langugae_code
+from utils.schemas import MAX_QUERIES_PER_STEP, LANGUAGE_CODE, set_langugae, set_search_langugae_code, \
+    build_agent_action_payload, MAX_REFLECT_PER_STEP
 from utils.token_tracker import TokenTracker
 from utils.url_tool import *
 
@@ -32,13 +34,15 @@ class KnowledgeItem:
 
 @dataclass
 class BoostedSearchSnippet:
-    url: str
-    merged: str
-    score: float
+    freq_boost: float
+    hostname_boost: float
+    path_boost: float
+    jina_rerank_boost: float
+    final_score: float
 
 
 def remove_extra_line_breaks(text: str) -> str:
-    return re.sub(r'\n\s*\n+', '\n\n', text.strip())
+    return re.sub(r'\n{2,}', '\n\n', text)
 
 
 def build_msgs_from_knowledge(knowledge: List[KnowledgeItem]) -> List[dict]:
@@ -366,7 +370,7 @@ async def execute_search_queries(
 
             # 401 错误时中止
             if hasattr(e, 'response') and hasattr(e.response, 'status') and e.response.status == 401 and provider in (
-            'jina', 'arxiv'):
+                    'jina', 'arxiv'):
                 raise Exception('Unauthorized Jina API key')
             continue
         finally:
@@ -452,33 +456,45 @@ async def execute_search_queries(
         "searchedQueries": searched_queries,
     }
 
+
 class TrackerContext:
     def __init__(self):
         self.tokenTracker = TokenTracker()
         self.actionTracker = ActionTracker()
 
+
+# 提前定义的辅助函数
+def includes_eval(all_checks, eval_type) -> bool:
+    return any(check["type"] == eval_type for check in all_checks)
+
+
 async def get_response(
         question,
         search_languge_code,
         search_provider,
-        with_inmages=False,
-        token_budget = 1000000,
-        existing_context = 2,
-        messages=[],
+        with_images=False,
+        token_budget=1000000,
+        max_bad_attempts=2,
+        existing_context=2,
+        messages=None,
         num_returned_urls=100,
         no_direct_answer=False,
-        boost_hostnames=[],
-        only_hostnames=[],
-        max_ref = 10,
+        boost_hostnames=None,
+        bad_hostnames=None,
+        only_hostnames=None,
+        max_ref=10,
         min_rel_score=0.8,
         language_code=None,
         team_size=1
 ):
-    step = 0
-    total_step = 0
+    step = 1  # 应该是0
+    total_step = 1  # 应该是0
     all_context = []
+    log = get_logger("get_response")
+
     def update_context(s):
         all_context.append(s)
+
     if messages is not None:
         messages = [m for m in messages if m.get("role") != 'system']
     question = question.strip() if question is not None else None
@@ -492,8 +508,10 @@ async def get_response(
 
             # 取最后一个（如果有），取其 'text' 字段，否则空字符串
             question = text_contents[-1]['text'] if text_contents else ''
-    else:
+    elif messages:
         messages = [{'role': 'user', 'content': question.strip()}]
+    else:
+        messages = []
 
     set_langugae(language_code or question)
     if search_languge_code is not None:
@@ -501,23 +519,159 @@ async def get_response(
 
     context = TrackerContext()
     context.tokenTracker = getattr(existing_context, 'tokenTracker',
-                                   TokenTracker(token_budget)) if existing_context is not None else TokenTracker(token_budget)
+                                   TokenTracker(token_budget)) if existing_context is not None else TokenTracker(
+        token_budget)
     context.actionTracker = getattr(existing_context, 'actionTracker',
                                     ActionTracker()) if existing_context is not None else ActionTracker()
 
     generator = ObjectGeneratorSafe(context.tokenTracker)
+    schema = build_agent_action_payload(True, True, True, True, True)
+    gaps = [question]
+    all_questions = [question]
+    all_keywords = []
+    candidate_answers = []
+    all_knowledge = []
 
+    diary_context = []
+    weight_URLs = []
 
+    allow_answer = True
+    allow_read = True
+    allow_search = True
+    allow_reflect = True
+    allow_coding = False
+    msg_knowledge = []
+
+    this_step = {
+        'action': 'answer',
+        'answer': '',
+        'references': [],
+        'think': '',
+        'isFinal': False
+    }
+
+    all_URLs = {}
+    all_web_contents = []
+    visited_URLs = []
+    bad_URLs = []
+    image_objects = []
+    evaluation_metrics = {}
+    regular_budget = token_budget * 0.85
+    final_answer_PIP = []
+    trivial_question = False
+
+    for m in messages:
+        str_msg = ''
+        if isinstance(m.get("content"), str):
+            str_msg = m.get("content").strip()
+        elif isinstance(m.get("content"), dict) and isinstance(m.get("content"), list):
+
+            str_msg = '\n'.join(
+                c['text'] for c in m.get("content") if c.get('type') == 'text'
+            ).strip()
+
+        for u in extract_urls_with_description(str_msg):
+            add_to_all_urls(u, all_URLs)
+    while context.tokenTracker.get_total_usage().totalTokens < regular_budget:
+        step += 1
+        total_step += 1
+        budget_percentage = f"{(context.tokenTracker.get_total_usage().totalTokens / token_budget * 100):.2f}"
+        log.debug(f"Step {total_step} / Budget used {budget_percentage}%" + str({" gaps": gaps}))
+        allow_reflect = allow_reflect and (len(gaps) <= MAX_REFLECT_PER_STEP)
+        # 轮询取出当前问题
+        current_question: str = gaps[total_step % len(gaps)]
+
+        if current_question.strip() == question and total_step == 1:
+            eval_types = await evaluate_question(question, context)
+            evaluation_metrics[current_question] = [
+                {"type": e, "numEvalsRequired": max_bad_attempts} for e in eval_types
+            ]
+            evaluation_metrics[current_question].append(
+                {"type": "strict", "numEvalsRequired": max_bad_attempts}
+            )
+        elif current_question.strip() != question:
+            # 非原始问题，初始化为空列表
+            evaluation_metrics[current_question] = []
+
+        if total_step == 1 and includes_eval(evaluation_metrics[current_question], "freshness"):
+            # 在第一步检测到 freshness 时，禁止直接回答与反射
+            allow_answer = False
+            allow_reflect = False
+
+        # 尚未测试，重排序+每个hostname保留top-2个
+        if all_URLs and len(all_URLs) > 0:
+            filtered = filter_urls(
+                all_URLs,
+                visited_URLs,
+                bad_hostnames,
+                only_hostnames
+            )
+            # rerank
+            weighted_urls = rank_urls(
+                filtered,
+                {
+                    "question": current_question,
+                    "boostHostnames": boost_hostnames
+                },
+                context
+            )
+            # 提升多样性：每个 hostname 最多留 top-2
+            weighted_urls = keep_k_per_hostname(weighted_urls, 2)
+
+            log.debug("Weighted URLs:" + str({" count": len(weighted_urls)}))
+
+        allow_read = allow_read and len(weight_URLs) > 0
+        allow_search = allow_search and len(weight_URLs) < 50  # disable search when too many urls already
+
+        generate_prompt = get_prompt(
+            diary_context,
+            all_questions,
+            all_keywords,
+            allow_reflect,
+            allow_answer,
+            allow_read,
+            allow_search,
+            allow_coding,
+            all_knowledge,
+            weight_URLs,
+            False
+        )
+        system = generate_prompt.get("system")
+        url_list = generate_prompt.get("url_list")
+        schema = build_agent_action_payload(
+            allow_answer=allow_answer,
+            allow_read=allow_read,
+            allow_search=allow_search,
+            allow_reflect=allow_reflect,
+            allow_coding=allow_coding,
+            current_question=current_question,
+        )
+        msg_with_knowledge = compose_msgs(
+            messages,
+            all_knowledge,
+            current_question,
+            final_answer_PIP if current_question == question else None
+        )
+
+        # result = await generator.generate_object({
+        #     "model": 'agent',
+        #     "schema": schema,
+        #     "system": system,
+        #
+        # })
+        break
 
 
 async def test(keywords_queries, context, all_urls, web_contents, only_hostnames=None):
-    result = await execute_search_queries(
-        keywords_queries=keywords_queries,
-        context=context,
-        all_urls=all_urls,
-        web_contents=web_contents,
-        search_provider="jina",
-        meta=None
+    await get_response(
+        "What is the current market value of OpenAI company?",
+        "zh",
+        "jina",
+        # messages=[{
+        #     'role': 'user',
+        #     'content': "请访问www.example.com",
+        # }],
+        language_code="zh"
     )
     # pprint(result)
 
