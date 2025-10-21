@@ -266,6 +266,7 @@ Based on the current context, you must choose one of the following actions:
 
 
 async def update_references(this_step: dict, all_urls: Dict[str, dict]):
+    log = get_logger("update_references")
     references = this_step.get("references", [])
     updated_refs = []
 
@@ -505,6 +506,7 @@ async def get_response(
                                     ActionTracker()) if existing_context is not None else ActionTracker()
 
     generator = ObjectGeneratorSafe(context.tokenTracker)
+
 
 
 
