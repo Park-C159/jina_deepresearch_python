@@ -1,6 +1,12 @@
 import os
+from typing import Optional
+
+import instructor
+import openai
 from openai import OpenAI
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field, field_validator, conlist, constr
+from sympy.physics.units import temperature
 
 # 加载.env文件到环境变量
 load_dotenv()
@@ -13,21 +19,47 @@ client = OpenAI(
 
 messages = [
     {"role": "system", "content": "你是一位历史研究专家。"},
-    {"role": "user", "content": "三大战役各个军队伤亡如何？"}
+    {"role": "user", "content": "你有哪些工具可用？"}
 ]
-completion = client.chat.completions.create(
-    # 模型列表：https://help.aliyun.com/zh/model-studio/getting-started/models
-    model="qwen-plus",
-    messages=messages,
-    # Qwen3模型通过enable_thinking参数控制思考过程（开源版默认True，商业版默认False）
-    # 使用Qwen3开源版模型时，若未启用流式输出，请将下行取消注释，否则会报错
-    extra_body={"enable_thinking": True},
-)
-# print(completion)
-messages.append({
-    "role": "assistant",
-    "content": "<think>" + completion.choices[0].message.content + "</think>\n" + completion.choices[0].message.content
-})
 
-print(messages)
+mode = instructor.Mode.TOOLS
+wrapped = instructor.from_openai(client, mode=mode)
+
+
+
+def build_agent_action_model(allow_search=False, allow_visit=False):
+    annotations = {'think': constr(max_length=500), 'action': str}
+    attrs = {}
+    if allow_search:
+        class SearchRequest(BaseModel):
+            searchRequests: conlist(constr(min_length=1, max_length=30), min_length=1, max_length=5) = Field(
+                ..., description="每个搜索请求字符串长度在1~30之间，数组最多4个请求。"
+            )
+        annotations['search'] = Optional[SearchRequest]
+        attrs['search'] = None
+    if allow_visit:
+        class VisitAction(BaseModel):
+            URLTargets: conlist(int, min_length=1, max_length=5) = Field(
+                ..., description=f"一组URL索引，最多5个。"
+            )
+
+        annotations['visit'] = Optional[VisitAction]
+        attrs['visit'] = None
+
+    attrs['__annotations__'] = annotations
+    model = type("AgentActionDynamic", (BaseModel,), attrs)
+    return model
+# 只允许 search
+AgentActionOnlySearch = build_agent_action_model(allow_search=True, allow_visit=False)
+
+obj, completion = wrapped.chat.completions.create_with_completion(
+    model="qwen-plus",
+    response_model=AgentActionOnlySearch,
+    messages=messages,
+    temperature=0.7
+)
+
+object_dict = obj.model_dump() if isinstance(obj, BaseModel) else obj
+print(object_dict)
+
 
