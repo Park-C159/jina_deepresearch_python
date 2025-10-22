@@ -7,7 +7,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 from tool.date_tools import format_date_range
-from tool.evaluator import evaluate_question
+from tool.evaluator import evaluate_question, evaluation_answer
 from tool.jina_search import search
 from tool.serp_cluster import serp_cluster
 from tool.text_tools import remove_html_tags
@@ -487,7 +487,7 @@ async def get_response(
         language_code=None,
         team_size=1
 ):
-    step = 1  # 应该是0
+    step = 0  # 应该是0
     total_step = 1  # 应该是0
     all_context = []
     log = get_logger("get_response")
@@ -653,12 +653,70 @@ async def get_response(
             final_answer_PIP if current_question == question else None
         )
 
-        # result = await generator.generate_object({
-        #     "model": 'agent',
-        #     "schema": schema,
-        #     "system": system,
-        #
-        # })
+        result = await generator.generate_object({
+            "model": "agent",
+            "schema": schema,
+            "system": system,
+            "messages": msg_with_knowledge,
+            "numRetries": 2
+        })
+        action = None
+        for act_key, act in result.get("object").get("action").items():
+            if act is not None:
+                action = act_key
+        this_step = {
+            "action": action,
+            "think": result.get("object").get("think"),
+        }
+        actions = [allow_search, allow_read, allow_answer, allow_reflect, allow_coding]
+        action_names = ['search', 'read', 'answer', 'reflect', 'coding']
+
+        actions_str = ', '.join([name for allowed, name in zip(actions, action_names) if allowed])
+        log.debug(f"`Step decision: {this_step["action"]} <- [{actions_str}]`, { this_step}, {current_question }")
+        context.actionTracker.track_action({
+            "totalStep": total_step,
+            "thisStep": this_step,
+            "gaps": gaps,
+        })
+        allow_answer = True
+        allow_reflect = True
+        allow_search = True
+        allow_read = True
+        allow_coding = True
+        this_step["action"] = 'answer'
+        this_step["answer"] = "OpenAI is a big company"
+        evaluation_metrics[current_question] = [{"type": "strict", "numEvalsRequired": max_bad_attempts}]
+        if this_step.get("action") is not None and this_step["action"] == "answer":
+            if total_step == 1 and not no_direct_answer:
+                this_step["isFinal"] = True
+                trivial_question = True
+                break
+            update_context({
+                "thisStep": this_step,
+                'question': current_question,
+                **this_step
+            })
+            log.debug('current question evaluation: ' + str({
+                'question': current_question,
+                'metrics': evaluation_metrics[current_question],
+            }))
+
+            evaluation = {
+                "pass": True,
+                "think": ''
+            }
+            if evaluation_metrics.get(current_question) is not None and len(evaluation_metrics.get(current_question)) > 0:
+                context.actionTracker.track_think('eval_first', language_code)
+                evaluation_types = [e.get("type") for e in evaluation_metrics.get(current_question) if e.get('numEvalsRequired') > 0]
+                evaluation = await evaluation_answer(
+                    current_question,
+                    this_step,
+                    evaluation_types,
+                    context,
+                    all_knowledge,
+                )
+
+
         break
 
 

@@ -1,4 +1,5 @@
-from typing import List, Type, Optional
+from datetime import date
+from typing import List, Type, Optional, Literal
 from pydantic import BaseModel, Field, field_validator, constr, conlist, create_model
 
 from utils.get_log import get_logger
@@ -296,3 +297,97 @@ Required when action='reflect'. Reflection and planning, generate a list of most
         ),
     )
     return AgentActionDynamic
+
+def get_evaluator_schema(eval_type):
+    # Base部分
+    class BaseSchemaBefore(BaseModel):
+        think: str = Field(
+            ...,
+            max_length=500,
+            description="Explanation the thought process why the answer does not pass the evaluation"
+        )
+
+    class BaseSchemaAfter(BaseModel):
+        pass_: bool = Field(..., alias='pass', description='If the answer passes the test defined by the evaluator')
+
+    # 各种evaluation的补充schema
+    class FreshnessAnalysis(BaseModel):
+        days_ago: int = Field(
+            ...,
+            min_length=0,
+            description=f"datetime of the **answer** and relative to {date.today().isoformat()}."
+        )
+        max_age_days: Optional[int] = Field(
+            None,
+            description="Maximum allowed age in days for this kind of question-answer type before it is considered outdated"
+        )
+
+    class PluralityAnalysis(BaseModel):
+        minimum_count_required: int = Field(
+            ...,
+            description="Minimum required number of items from the **question**"
+        )
+        actual_count_provided: int = Field(
+            ...,
+            description="Number of items provided in **answer**"
+        )
+
+    class CompletenessAnalysis(BaseModel):
+        aspects_expected: str = Field(
+            ...,
+            max_length=100,
+            description="Comma-separated list of all aspects or dimensions that the question explicitly asks for."
+        )
+        aspects_provided: str = Field(
+            ...,
+            max_length=100,
+            description="Comma-separated list of all aspects or dimensions that were actually addressed in the answer"
+        )
+
+    # 各种评价类型对象
+    class DefinitiveSchema(BaseSchemaBefore, BaseSchemaAfter):
+        type: Literal['definitive']
+
+    class FreshnessSchema(BaseSchemaBefore):
+        type: Literal['freshness']
+        freshness_analysis: FreshnessAnalysis
+        pass_: bool = Field(..., alias='pass', description='If "days_ago" <= "max_age_days" then pass!')
+
+    class PluralitySchema(BaseSchemaBefore):
+        type: Literal['plurality']
+        plurality_analysis: PluralityAnalysis
+        pass_: bool = Field(..., alias='pass', description='If count_provided >= count_expected then pass!')
+
+    class AttributionSchema(BaseSchemaBefore, BaseSchemaAfter):
+        type: Literal['attribution']
+        exactQuote: Optional[constr(max_length=200)] = Field(
+            None,
+            description="Exact relevant quote and evidence from the source that strongly support the answer and justify this question-answer pair"
+        )
+
+    class CompletenessSchema(BaseSchemaBefore, BaseSchemaAfter):
+        type: Literal['completeness']
+        completeness_analysis: CompletenessAnalysis
+
+    class StrictSchema(BaseSchemaBefore, BaseSchemaAfter):
+        type: Literal['strict']
+        improvement_plan: str = Field(
+            ...,
+            description='Explain how a perfect answer should look like and what are needed to improve the current answer. Starts with "For the best answer, you must..."',
+            max_length=1000
+        )
+    if eval_type == "definitive":
+        return DefinitiveSchema
+    elif eval_type == "freshness":
+        return FreshnessSchema
+    elif eval_type == "plurality":
+        return PluralitySchema
+    elif eval_type == "attribution":
+        return AttributionSchema
+    elif eval_type == "completeness":
+        return CompletenessSchema
+    elif eval_type == "strict":
+        return StrictSchema
+    else:
+        raise ValueError(f"Unknown evaluation type: {eval_type}")
+
