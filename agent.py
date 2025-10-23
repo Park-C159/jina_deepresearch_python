@@ -324,7 +324,7 @@ async def execute_search_queries(
         keywords_queries: List[Dict[str, Any]],
         context: Any,
         all_urls: Dict[str, Dict[str, Any]],
-        web_contents: Dict[str, Dict[str, Any]],
+        web_contents,
         only_hostnames: Optional[List[str]] = None,
         search_provider: Optional[str] = None,
         meta: Optional[str] = None
@@ -850,14 +850,38 @@ Although you solved a sub-question, you still need to find the answer to the ori
 
             allow_reflect = False
         elif this_step['action'] == 'search' and this_step.get('searchRequests'):
-            this_step['searchRequests'] = choose_k(
-                (await dedup_queries(this_step['searchRequests'],
-                                     [],
-                                     context.tokenTracker)).unique_queries,
-                MAX_REFLECT_PER_STEP
+            searched_queries, new_knowledge = choose_k(
+                await execute_search_queries(
+                    keywords_queries,
+                    context,
+                    all_URLs,
+                    all_web_contents,
+                    only_hostnames,
+                    search_provider
+                )
             )
-            this_step.get("searchRequests")
-
+            if len(searched_queries) > 0:
+                any_result = True
+                all_keywords.extend(searched_queries)
+                all_knowledge.extend(new_knowledge)
+                diary_context.append(f"""
+At step {step}, you took the **search** action and look for external information for the question: "{current_question}".
+In particular, you tried to search for the following keywords: "${", ".join(str(item["q"]) for item in keywords_queries)}".
+You found quite some information and add them to your URL list and **visit** them later when needed. 
+""")
+                update_context({
+                    'total_step': total_step,
+                    'question': current_question,
+                    'result': result,
+                    **this_step.__dict__
+                })
+            if not any_result or not len(keywords_queries):
+                diary_context.append(f"""
+At step {step}, you took the **search** action and look for external information for the question: "{current_question}".
+In particular, you tried to search for the following keywords:  "${", ".join(str(item["q"]) for item in keywords_queries}".
+But then you realized you have already searched for these keywords before, no new information is returned.
+You decided to think out of the box or cut from a completely different angle.
+""")
         break
 
 
