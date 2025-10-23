@@ -391,3 +391,20 @@ def get_evaluator_schema(eval_type):
     else:
         raise ValueError(f"Unknown evaluation type: {eval_type}")
 
+class ErrorAnalysisSchema(BaseModel):
+    recap: str = Field(
+        ...,
+        max_length=500,
+        description='Recap of the actions taken and the steps conducted in first person narrative.',
+    )
+    blame: str = Field(
+        ...,
+        max_length=500,
+        description=f"Which action or the step was the root cause of the answer rejection. {get_language_prompt()}"
+
+    )
+    improvement: str = Field(
+        ...,
+        max_length=500,
+        description=f"Suggested key improvement for the next iteration, do not use bullet points, be concise and hot-take vibe. {get_language_prompt()}"
+    )

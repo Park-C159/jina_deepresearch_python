@@ -32,12 +32,12 @@ def format_date_range(tbs: str) -> str:
     if search_dt is None:
         return ""
 
-    start = _format_date_based_on_type(search_dt, fmt)
-    end = _format_date_based_on_type(now, fmt)
+    start = format_date_based_on_type(search_dt, fmt)
+    end = format_date_based_on_type(now, fmt)
     return f"Between {start} and {end}"
 
 
-def _format_date_based_on_type(dt: datetime, fmt: str) -> str:
+def format_date_based_on_type(dt: datetime, fmt: str) -> str:
     """按类型输出精简格式"""
     match fmt:
         case "hour":
