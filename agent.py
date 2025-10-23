@@ -6,11 +6,13 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 
-from tool.date_tools import format_date_range
-from tool.evaluator import evaluate_question
+from tool.date_tools import format_date_range, format_date_based_on_type
+from tool.error_analyzer import analyze_steps
+from tool.evaluator import evaluate_question, evaluation_answer
+from tool.jina_dedup import dedup_queries
 from tool.jina_search import search
 from tool.serp_cluster import serp_cluster
-from tool.text_tools import remove_html_tags
+from tool.text_tools import remove_html_tags, choose_k
 from utils.action_tracker import ActionTracker
 from utils.safe_generator import ObjectGeneratorSafe
 from utils.schemas import MAX_QUERIES_PER_STEP, LANGUAGE_CODE, set_langugae, set_search_langugae_code, \
@@ -322,7 +324,7 @@ async def execute_search_queries(
         keywords_queries: List[Dict[str, Any]],
         context: Any,
         all_urls: Dict[str, Dict[str, Any]],
-        web_contents: Dict[str, Dict[str, Any]],
+        web_contents,
         only_hostnames: Optional[List[str]] = None,
         search_provider: Optional[str] = None,
         meta: Optional[str] = None
@@ -487,7 +489,7 @@ async def get_response(
         language_code=None,
         team_size=1
 ):
-    step = 1  # 应该是0
+    step = 0  # 应该是0
     total_step = 1  # 应该是0
     all_context = []
     log = get_logger("get_response")
@@ -653,12 +655,233 @@ async def get_response(
             final_answer_PIP if current_question == question else None
         )
 
-        # result = await generator.generate_object({
-        #     "model": 'agent',
-        #     "schema": schema,
-        #     "system": system,
-        #
-        # })
+        result = await generator.generate_object({
+            "model": "agent",
+            "schema": schema,
+            "system": system,
+            "messages": msg_with_knowledge,
+            "numRetries": 2
+        })
+        action = None
+        for act_key, act in result.get("object").get("action").items():
+            if act is not None:
+                action = act_key
+        this_step = {
+            "action": action,
+            "think": result.get("object").get("think"),
+        }
+        actions = [allow_search, allow_read, allow_answer, allow_reflect, allow_coding]
+        action_names = ['search', 'read', 'answer', 'reflect', 'coding']
+
+        actions_str = ', '.join([name for allowed, name in zip(actions, action_names) if allowed])
+        log.debug(f"`Step decision: {this_step["action"]} <- [{actions_str}]`, {this_step}, {current_question}")
+        context.actionTracker.track_action({
+            "totalStep": total_step,
+            "thisStep": this_step,
+            "gaps": gaps,
+        })
+        allow_answer = True
+        allow_reflect = True
+        allow_search = True
+        allow_read = True
+        allow_coding = True
+        this_step["action"] = 'answer'
+        this_step["answer"] = "OpenAI is a big company"
+        evaluation_metrics[current_question] = [{"type": "strict", "numEvalsRequired": max_bad_attempts}]
+        if this_step.get("action") is not None and this_step["action"] == "answer":
+            if total_step == 1 and not no_direct_answer:
+                this_step["isFinal"] = True
+                trivial_question = True
+                break
+            update_context({
+                "thisStep": this_step,
+                'question': current_question,
+                **this_step
+            })
+            log.debug('current question evaluation: ' + str({
+                'question': current_question,
+                'metrics': evaluation_metrics[current_question],
+            }))
+
+            evaluation = {
+                "pass": True,
+                "think": ''
+            }
+            if evaluation_metrics.get(current_question) is not None and len(
+                    evaluation_metrics.get(current_question)) > 0:
+                context.actionTracker.track_think('eval_first', language_code)
+                evaluation_types = [e.get("type") for e in evaluation_metrics.get(current_question) if
+                                    e.get('numEvalsRequired') > 0]
+                evaluation = await evaluation_answer(
+                    current_question,
+                    this_step,
+                    evaluation_types,
+                    context,
+                    all_knowledge,
+                )
+            if current_question.strip() == question.strip():
+                allow_coding = False
+
+                if evaluation.get("pass"):
+                    diary_context.append(f"""
+At step {step}, you took **answer** action and finally found the answer to the original question:
+
+Original question: 
+{current_question}
+
+Your answer: 
+${this_step['answer']}
+
+The evaluator thinks your answer is good because: 
+${evaluation['think']}
+
+Your journey ends here. You have successfully answered the original question. Congratulations! 🎉
+""")
+                    this_step["isFinal"] = True
+                    break
+                else:
+                    for e in evaluation_metrics[current_question]:
+                        if e.type == evaluation.type:
+                            e.numEvalsRequired -= 1
+                    # 然后过滤
+                    evaluation_metrics[current_question] = [
+                        e for e in evaluation_metrics[current_question] if e.numEvalsRequired > 0
+                    ]
+                    if evaluation.get("type") == 'strict' and evaluation.get("improvement_plan"):
+                        final_answer_PIP.append(evaluation["improvement_plan"])
+                    if len(evaluation_metrics[current_question]) == 0:
+                        this_step["isFinal"] = False
+                        break
+                    diary_context.append(f"""
+At step ${step}, you took **answer** action but evaluator thinks it is not a good answer:
+
+Original question: 
+${current_question}
+
+Your answer: 
+${this_step.get("answer")}
+
+The evaluator thinks your answer is bad because: 
+${evaluation.get("think")}
+""")
+                    error_analysis = await analyze_steps({
+                        diary_context,
+                        context
+                    })
+                    all_knowledge.append({
+                        'question': f"""Why is the following answer bad for the question? Please reflect
+
+<question>
+{current_question}
+</question>
+
+<answer>
+${this_step.get("answer")}
+</answer>
+`,
+            answer: `
+${evaluation.get('think')}
+
+${error_analysis.get('recap')}
+
+${error_analysis.get('blame')}
+
+${error_analysis.get('improvement')}
+""",
+                        'type': 'qa'
+                    })
+                    allow_answer = False
+                    diary_context = []
+                    step = 0
+            elif evaluation.get("pass"):
+                diary_context.append(f"""At step ${step}, you took **answer** action. You found a good answer to the sub-question:
+
+Sub-question: 
+{current_question}
+
+Your answer: 
+{this_step.get("answer")}
+
+The evaluator thinks your answer is good because: 
+{evaluation.get('think')}
+
+Although you solved a sub-question, you still need to find the answer to the original question. You need to keep going.""")
+                all_knowledge.append({
+                    'question': current_question,
+                    'answer': this_step["answer"],
+                    'type': 'qa',
+                    'updated': format_date_based_on_type(datetime.now(), 'full')
+                })
+                if current_question in gaps:
+                    gaps.remove(current_question)
+        elif this_step['action'] == 'reflect' and this_step.get('question2answer'):
+            this_step['question2answer'] = choose_k(
+                (await dedup_queries(this_step['question2answer'], all_questions,
+                                     context.tokenTracker)).unique_queries,
+                MAX_REFLECT_PER_STEP
+            )
+            new_gap_questions = this_step['question2answer']
+
+            if new_gap_questions:
+                # found new gap questions
+                diary_context.append(f"""
+            At step {step}, you took **reflect** and think about the knowledge gaps. You found some sub-questions are important to the question: "{current_question}"
+            You realize you need to know the answers to the following sub-questions:
+            {chr(10).join([f"- {q}" for q in new_gap_questions])}
+
+            You will now figure out the answers to these sub-questions and see if they can help you find the answer to the original question.
+            """)
+                gaps.extend(new_gap_questions)
+                all_questions.extend(new_gap_questions)
+                update_context({
+                    **this_step.__dict__,
+                    'total_step': total_step,
+                })
+            else:
+                diary_context.append(f"""
+            At step {step}, you took **reflect** and think about the knowledge gaps. You tried to break down the question "{current_question}" into gap-questions like this: {', '.join(new_gap_questions)} 
+            But then you realized you have asked them before. You decided to think out of the box or cut from a completely different angle. 
+            """)
+                update_context({
+                    **this_step.__dict__,
+                    'total_step': total_step,
+                    'result': "You have tried all possible questions and found no useful information. You must think out of the box or different angle!!!"
+                })
+
+            allow_reflect = False
+        elif this_step['action'] == 'search' and this_step.get('searchRequests'):
+            searched_queries, new_knowledge = choose_k(
+                await execute_search_queries(
+                    keywords_queries,
+                    context,
+                    all_URLs,
+                    all_web_contents,
+                    only_hostnames,
+                    search_provider
+                )
+            )
+            if len(searched_queries) > 0:
+                any_result = True
+                all_keywords.extend(searched_queries)
+                all_knowledge.extend(new_knowledge)
+                diary_context.append(f"""
+At step {step}, you took the **search** action and look for external information for the question: "{current_question}".
+In particular, you tried to search for the following keywords: "${", ".join(str(item["q"]) for item in keywords_queries)}".
+You found quite some information and add them to your URL list and **visit** them later when needed. 
+""")
+                update_context({
+                    'total_step': total_step,
+                    'question': current_question,
+                    'result': result,
+                    **this_step.__dict__
+                })
+            if not any_result or not len(keywords_queries):
+                diary_context.append(f"""
+At step {step}, you took the **search** action and look for external information for the question: "{current_question}".
+In particular, you tried to search for the following keywords:  "${", ".join(str(item["q"]) for item in keywords_queries}".
+But then you realized you have already searched for these keywords before, no new information is returned.
+You decided to think out of the box or cut from a completely different angle.
+""")
         break
 
 

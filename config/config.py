@@ -43,7 +43,7 @@ class ToolOverrides(TypedDict, total=False):
 def get_tool_config(tool_name) -> ToolConfig:
     """返回指定工具的完整配置（合并 default + tool 级覆盖）"""
     provider_key = "gemini" if LLM_PROVIDER == "vertex" else LLM_PROVIDER
-    provider_config = config["models"][provider_key]
+    provider_config = config["models"].get(provider_key)
 
     default: ToolConfig = provider_config["default"]  # type: ignore
 

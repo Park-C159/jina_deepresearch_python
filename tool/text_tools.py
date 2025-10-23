@@ -1,4 +1,5 @@
 import json
+import random
 import re
 from pathlib import Path
 from typing import Dict
@@ -11,6 +12,12 @@ I18N_FILENAME = "i18n.json"  # 当前目录下的 i18nJSON 文件
 def remove_html_tags(text: str) -> str:
     """移除字符串中的 HTML 标签。"""
     return re.sub(r'<[^>]*>', '', text, flags=re.MULTILINE | re.IGNORECASE)
+
+
+def choose_k(a: list[str], k: int) -> list[str]:
+    temp = a.copy()
+    random.shuffle(temp)
+    return temp[:k]
 
 
 def get_i18n_text(key: str, lang: str = 'en', params: Dict[str, str] | None = None):
