@@ -7,10 +7,13 @@ import asyncio
 
 from typing import Dict, List, Any
 from tool.jina_rerank import rerank_documents
+from tool.text_tools import get_i18n_text
 from utils.get_log import get_logger
 
 import re
 import urllib.parse
+
+from utils.schemas import LANGUAGE_CODE
 
 
 def normalize_url(
@@ -527,3 +530,160 @@ def keep_k_per_hostname(results: List[Dict[str, Any]], k: int) -> List[Dict[str,
             hostname_map[host] = cnt + 1
 
     return filtered
+
+
+def process_urls(
+        urls,
+        context,
+        all_knowledge,
+        all_urls,
+        visited_urls,
+        bad_urls,
+        image_objects,
+        question,
+        web_contents,
+        with_images=False
+):
+    if not urls:
+        return {"urlResults": [], "success": False}
+
+    bad_hostnames: List[str] = []
+
+    # ---------- 1. 记录阅读动作 ----------
+    this_step = {
+        "action": "visit",
+        "think": get_i18n_text(
+            "read_for",
+            LANGUAGE_CODE,
+            {"urls": ", ".join(urls)}
+        ),
+        "URLTargets": urls,
+    }
+    context.actionTracker.track_action({"thisStep": this_step})
+
+    # ---------- 2. 并行处理每个 URL ----------
+    async def _process_single(url: str):
+        nonlocal bad_hostnames
+        try:
+            normalized = normalize_url(url)
+            if not normalized:
+                return None
+            url = normalized  # 统一用归一化后的 URL
+
+            response = await read_url(url, True, context.token_tracker, with_images)
+            data = response["data"]
+            guessed_time = await get_last_modified(url)
+            if guessed_time:
+                logging.debug(f"Guessed time for {url}: {guessed_time}")
+
+            if not data.get("url") or not data.get("content"):
+                raise ValueError("No content found")
+
+            # 垃圾内容检测
+            spam_detect_length = 300
+            is_good = len(data["content"]) > spam_detect_length or not await classify_text(
+                data["content"]
+            )
+            if not is_good:
+                logging.warning(
+                    f"Blocked content {len(data['content'])}:",
+                    {"url": url, "content": data["content"][:spam_detect_length]},
+                )
+                raise ValueError(f"Blocked content {url}")
+
+            # 分块存储
+            chunks, chunk_positions = chunk_text(data["content"])
+            web_contents[data["url"]] = {
+                "chunks": chunks,
+                "chunk_positions": chunk_positions,
+                "title": data.get("title"),
+            }
+
+            # 加入知识库
+            answer = await cherry_pick(
+                question, data["content"], {}, context, schema_gen, url
+            )
+            all_knowledge.append(
+                {
+                    "question": f'What do expert say about "{question}"?',
+                    "answer": answer,
+                    "references": [data["url"]],
+                    "type": "url",
+                    "updated": (
+                        format_date_based_on_type(datetime.fromisoformat(guessed_time), "full")
+                        if guessed_time
+                        else None
+                    ),
+                }
+            )
+
+            # 处理页面内链接
+            for link in data.get("links") or []:
+                nn = normalize_url(link[1])
+                if not nn:
+                    continue
+                snippet = {"title": link[0], "url": nn, "description": link[0]}
+                add_to_all_urls(snippet, all_urls, 0.1)
+
+            # 处理图片
+            if with_images and data.get("images"):
+                for alt, img_url in data["images"].items():
+                    img_obj = await process_image(img_url, context.token_tracker)
+                    if img_obj and not any(i["url"] == img_obj["url"] for i in image_objects):
+                        image_objects.append(img_obj)
+
+            return {"url": url, "result": response}
+
+        except Exception as e:
+            logging.error("Error reading URL:", {"url": url, "error": str(e)})
+            bad_urls.append(url)
+
+            # 根据错误信息收集坏 hostname
+            msg = str(e).lower()
+            if any(
+                k in msg
+                for k in (
+                    "couldn't resolve host name",
+                    "could not be resolved",
+                    "err_cert_common_name_invalid",
+                    "err_connection_refused",
+                )
+            ) or (
+                e.__class__.__name__ in ("ParamValidationError", "AssertionFailureError")
+                and ("domain" in msg or "resolve host name" in msg)
+            ):
+                hostname = ""
+                try:
+                    hostname = extract_url_parts(url).hostname
+                except Exception as parse_e:
+                    logging.error("Error parsing URL for hostname:", {"url": url, "error": str(parse_e)})
+                if hostname:
+                    bad_hostnames.append(hostname)
+                    logging.debug(f"Added {hostname} to bad hostnames list")
+            return None
+
+        finally:
+            # 无论成败，只要 url 非空就记入已访问
+            if url:
+                visited_urls.append(url)
+                context.action_tracker.track_action(
+                    {
+                        "thisStep": {
+                            "action": "visit",
+                            "think": "",
+                            "URLTargets": [url],
+                        }
+                    }
+                )
+
+    url_results = await asyncio.gather(*[_process_single(u) for u in urls])
+    valid_results = [r for r in url_results if r is not None]
+
+    # ---------- 3. 根据 bad_hostnames 清理 all_urls ----------
+    if bad_hostnames:
+        for u in list(all_urls.keys()):
+            if extract_url_parts(u).hostname in bad_hostnames:
+                del all_urls[u]
+                logging.warning(f"Removed {u} from all_urls because of bad hostname")
+
+    return {"urlResults": valid_results, "success": len(valid_results) > 0}

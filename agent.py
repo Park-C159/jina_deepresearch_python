@@ -11,12 +11,13 @@ from tool.error_analyzer import analyze_steps
 from tool.evaluator import evaluate_question, evaluation_answer
 from tool.jina_dedup import dedup_queries
 from tool.jina_search import search
+from tool.queryrewriter import rewrite_query
 from tool.serp_cluster import serp_cluster
 from tool.text_tools import remove_html_tags, choose_k
 from utils.action_tracker import ActionTracker
 from utils.safe_generator import ObjectGeneratorSafe
-from utils.schemas import MAX_QUERIES_PER_STEP, LANGUAGE_CODE, set_langugae, set_search_langugae_code, \
-    build_agent_action_payload, MAX_REFLECT_PER_STEP
+from utils.schemas import MAX_QUERIES_PER_STEP, LANGUAGE_CODE, set_langugae, set_search_language_code, \
+    build_agent_action_payload, MAX_REFLECT_PER_STEP, MAX_URLS_PER_STEP
 from utils.token_tracker import TokenTracker
 from utils.url_tool import *
 
@@ -470,6 +471,19 @@ def includes_eval(all_checks, eval_type) -> bool:
     return any(check["type"] == eval_type for check in all_checks)
 
 
+def dedup_keywords(keywords_queries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    # 先按 q 分组
+    by_q: Dict[str, List[Dict[str, Any]]] = {}
+    for kq in keywords_queries:
+        by_q.setdefault(kq["q"], []).append(kq)
+
+    # 如果同一 q 出现多次，只保留裸 {q}；否则保留唯一那条
+    def pick(matches: List[Dict[str, Any]]) -> Dict[str, Any]:
+        return {"q": matches[0]["q"]} if len(matches) > 1 else matches[0]
+
+    return [pick(group) for group in by_q.values()]
+
+
 async def get_response(
         question,
         search_languge_code,
@@ -517,7 +531,7 @@ async def get_response(
 
     set_langugae(language_code or question)
     if search_languge_code is not None:
-        set_search_langugae_code(search_languge_code)
+        set_search_language_code(search_languge_code)
 
     context = TrackerContext()
     context.tokenTracker = getattr(existing_context, 'tokenTracker',
@@ -850,41 +864,124 @@ Although you solved a sub-question, you still need to find the answer to the ori
 
             allow_reflect = False
         elif this_step['action'] == 'search' and this_step.get('searchRequests'):
-            searched_queries, new_knowledge = choose_k(
-                await execute_search_queries(
+            this_step['searchRequests'] = choose_k(
+                (await dedup_queries(
+                    this_step['searchRequests'],
+                    [],
+                    context.tokenTracker)
+                 ).unique_queries,
+                MAX_QUERIES_PER_STEP
+            )
+            searched_queries, new_knowledge = await execute_search_queries(
+                [{"q": q} for q in this_step.get('searchRequests', '')],
+                context,
+                all_URLs,
+                all_web_contents,
+                None,  # 对应 TS 的 undefined
+                search_provider,
+            )
+            all_keywords.extend(searched_queries)
+            all_knowledge.extend(new_knowledge)
+            sound_bites = ' '.join(k['answer'] for k in new_knowledge)
+
+            if team_size > 1:
+                print("并行查询，暂时没有")
+            keywords_queries = await rewrite_query(this_step, sound_bites, context)
+            q_only = [q['q'] for q in keywords_queries]
+            uniq_q_only = choose_k(
+                (
+                    await dedup_queries(
+                        q_only,
+                        all_knowledge,
+                        context.tokenTracker
+                    )
+                ).unique_queries,
+                MAX_QUERIES_PER_STEP
+            )
+            temp = []
+            for q in uniq_q_only:
+                matches = [kq for kq in keywords_queries if kq.get("q") == q]
+                if len(matches) > 1:
+                    temp.append({'q': q})
+                elif matches:
+                    temp.append(matches[0])
+                else:
+                    temp.append({'q': q})
+            keywords_queries = temp
+
+            any_result = False
+
+            if len(keywords_queries) > 0:
+                searched_queries, new_knowledge = await execute_search_queries(
                     keywords_queries,
                     context,
                     all_URLs,
                     all_web_contents,
                     only_hostnames,
-                    search_provider
+                    search_provider,
                 )
-            )
-            if len(searched_queries) > 0:
-                any_result = True
-                all_keywords.extend(searched_queries)
-                all_knowledge.extend(new_knowledge)
-                diary_context.append(f"""
+
+                if len(searched_queries) > 0:
+                    any_result = True
+                    all_keywords.extend(searched_queries)
+                    all_knowledge.extend(new_knowledge)
+                    diary_context.append(f"""
 At step {step}, you took the **search** action and look for external information for the question: "{current_question}".
 In particular, you tried to search for the following keywords: "${", ".join(str(item["q"]) for item in keywords_queries)}".
 You found quite some information and add them to your URL list and **visit** them later when needed. 
 """)
-                update_context({
-                    'total_step': total_step,
-                    'question': current_question,
-                    'result': result,
-                    **this_step.__dict__
-                })
-            if not any_result or not len(keywords_queries):
-                diary_context.append(f"""
-At step {step}, you took the **search** action and look for external information for the question: "{current_question}".
-In particular, you tried to search for the following keywords:  "${", ".join(str(item["q"]) for item in keywords_queries}".
-But then you realized you have already searched for these keywords before, no new information is returned.
+                    update_context({
+                        'total_step': total_step,
+                        'question': current_question,
+                        'result': result,
+                        **this_step.__dict__
+                    })
+            if not any_result or not keywords_queries:
+                diary_context.append(
+                    f"""
+At step {step}, you took the **search** action and looked for external information for the question: "{current_question}".
+In particular, you tried to search for the following keywords: "{', '.join(str(item['q']) for item in keywords_queries)}".
+But then you realized you have already searched for these keywords before; no new information was returned.
 You decided to think out of the box or cut from a completely different angle.
 """)
-        break
+                update_context({
+                    'total_step': total_step,
+                    'result': "You have tried all possible queries and found no new information. You must think out of the box or different angle!!!",
+                    **this_step.__dict__
+                })
+            allow_search = False
+            allow_answer = False
+        elif this_step['action'] == 'visit' and this_step.get('URLTargets') and len(url_list) > 0:
+            this_step['URLTargets'] = [
+                normalize_url(url_list[idx - 1])
+                for idx in (this_step.get('URLTargets') or [])  # 等价于 (thisStep.URLTargets as number[])
+            ]
+            step_url_targets = [
+                url for url in this_step['URLTargets']
+                if url and url not in visited_URLs
+            ]
+            weighted_urls_list = [r['url'] for r in weighted_urls if r.get('url')]
+            this_step['URLTargets'] = list(dict.fromkeys(step_url_targets + weighted_urls_list))[:MAX_URLS_PER_STEP]
+            unique_URLs = this_step.get("URLTargets")
+            log.debug('Unique URLs: ' + str(unique_URLs))
+            if len(unique_URLs) > 0:
+                url_results, success = process_urls(
+                    unique_URLs,
+                    context,
+                    all_knowledge,
+                    all_URLs,
+                    visited_URLs,
+                    bad_URLs,
+                    image_objects,
+                    current_question,
+                    all_web_contents,
+                    with_images
+                )
 
-
+            allow_read = False
+            break
+                
+                
 async def test(keywords_queries, context, all_urls, web_contents, only_hostnames=None):
     await get_response(
         "What is the current market value of OpenAI company?",

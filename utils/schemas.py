@@ -80,7 +80,7 @@ def set_langugae(query):
         return
 
 
-def set_search_langugae_code(search_languge_code):
+def set_search_language_code(search_languge_code):
     global SEARCH_LANGUAGE_CODE, LANGUAGE_STYLE, LANGUAGE_CODE
     SEARCH_LANGUAGE_CODE = search_languge_code
     return
@@ -192,6 +192,7 @@ class QuestionEvaluateSchema(BaseModel):
     needsPlurality: bool
     needsCompleteness: bool
 
+
 def build_agent_action_payload(
         allow_search=True,
         allow_reflect=True,
@@ -298,6 +299,7 @@ Required when action='reflect'. Reflection and planning, generate a list of most
     )
     return AgentActionDynamic
 
+
 def get_evaluator_schema(eval_type):
     # Base部分
     class BaseSchemaBefore(BaseModel):
@@ -376,6 +378,7 @@ def get_evaluator_schema(eval_type):
             description='Explain how a perfect answer should look like and what are needed to improve the current answer. Starts with "For the best answer, you must..."',
             max_length=1000
         )
+
     if eval_type == "definitive":
         return DefinitiveSchema
     elif eval_type == "freshness":
@@ -390,6 +393,7 @@ def get_evaluator_schema(eval_type):
         return StrictSchema
     else:
         raise ValueError(f"Unknown evaluation type: {eval_type}")
+
 
 class ErrorAnalysisSchema(BaseModel):
     recap: str = Field(
@@ -407,4 +411,48 @@ class ErrorAnalysisSchema(BaseModel):
         ...,
         max_length=500,
         description=f"Suggested key improvement for the next iteration, do not use bullet points, be concise and hot-take vibe. {get_language_prompt()}"
+    )
+
+
+class SearchQuery(BaseModel):
+    """
+    单条搜索查询结构
+    """
+    tbs: str = Field(
+        description=(
+            "time-based search filter, must use this field if the search request asks for latest info. "
+            "qdr:h for past hour, qdr:d for past 24 hours, qdr:w for past week, "
+            "qdr:m for past month, qdr:y for past year. Choose exactly one."
+        )
+    )
+    location: Optional[str] = Field(
+        None,
+        description=(
+            "defines from where you want the search to originate. "
+            "It is recommended to specify location at the city level in order to simulate a real user's search."
+        ),
+    )
+    q: str = Field(
+        max_length=50,
+        description=(
+            "keyword-based search query, 2-3 words preferred, total length < 30 characters. "
+            f"{'Must in ' + SEARCH_LANGUAGE_CODE if SEARCH_LANGUAGE_CODE else ''}"
+        ),
+    )
+
+
+class QueryRewriterSchema(BaseModel):
+    """
+    重写查询返回结构
+    """
+    think: str = Field(
+        max_length=500,
+        description=f"Explain why you choose those search queries. {get_language_prompt()}",
+    )
+    queries: List[SearchQuery] = Field(
+        max_length=MAX_QUERIES_PER_STEP,
+        description=(
+            "Array of search keywords queries, orthogonal to each other. "
+            f"Maximum {MAX_QUERIES_PER_STEP} queries allowed."
+        ),
     )
