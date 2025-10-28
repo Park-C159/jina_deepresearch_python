@@ -2,11 +2,19 @@ import logging
 import math
 import re
 import urllib.parse
+from datetime import datetime
+
 import aiohttp
 import asyncio
 
 from typing import Dict, List, Any
+
+from tool.date_tools import format_date_based_on_type
+from tool.jina_classify_spam import classify_text
+from tool.jina_latechunk import cherry_pick
 from tool.jina_rerank import rerank_documents
+from tool.read_tools import read_url
+from tool.segments import chunk_text
 from tool.text_tools import get_i18n_text
 from utils.get_log import get_logger
 
@@ -532,7 +540,7 @@ def keep_k_per_hostname(results: List[Dict[str, Any]], k: int) -> List[Dict[str,
     return filtered
 
 
-def process_urls(
+async def process_urls(
         urls,
         context,
         all_knowledge,
@@ -601,7 +609,7 @@ def process_urls(
 
             # 加入知识库
             answer = await cherry_pick(
-                question, data["content"], {}, context, schema_gen, url
+                question, data["content"], {}, context, url
             )
             all_knowledge.append(
                 {

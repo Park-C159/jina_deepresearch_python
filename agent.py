@@ -979,6 +979,8 @@ You decided to think out of the box or cut from a completely different angle.
                 )
 
             allow_read = False
+        elif this_step.get("action") == 'coding' and this_step.get("codingIssue"):
+
             break
                 
                 
