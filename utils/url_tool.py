@@ -17,11 +17,81 @@ from tool.read_tools import read_url
 from tool.segments import chunk_text
 from tool.text_tools import get_i18n_text
 from utils.get_log import get_logger
-
+from urllib.parse import urlparse
 import re
 import urllib.parse
 
 from utils.schemas import LANGUAGE_CODE
+
+
+def extract_url_parts(url_str):
+    """
+    提取 URL 的主机名（去掉 www. 前缀）和路径。
+    若解析失败则返回空字符串。
+    """
+    try:
+        parsed = urlparse(url_str)
+        hostname = parsed.hostname or ""
+        if hostname.startswith("www."):
+            hostname = hostname[4:]
+        path = parsed.path or ""
+        return {"hostname": hostname, "path": path}
+    except Exception as e:
+        logging.error(f"Error parsing URL: {url_str}", error=e)
+        return {"hostname": "", "path": ""}
+
+
+def normalize_host_name(host_str):
+    """
+    标准化主机名：
+      - 优先解析 URL 获取主机部分；
+      - 若解析失败，则尝试去掉 'www.' 前缀并小写化；
+    """
+    extract = extract_url_parts(host_str)
+    host = extract["hostname"]
+
+    if not host:
+        return host_str[4:].lower() if host_str.startswith("www.") else host_str.lower()
+
+    return host
+
+
+def fix_bad_url_md_links(md_content, all_urls):
+    """
+    修复 Markdown 链接中的“坏链接文本”：
+    如果链接文本与 URL 完全相同，则尝试替换为更易读的格式：
+    - 若在 all_urls 中有标题信息，则使用 [title - hostname](url)
+    - 否则使用 [hostname](url)
+    """
+
+    def replace_link(match):
+        text, url = match.group(1), match.group(2)
+
+        # 如果链接文本与 URL 完全一致，则尝试修复
+        if text == url:
+            url_info = all_urls.get(url)
+
+            try:
+                hostname = urllib.urlparse(url).hostname or url
+            except Exception:
+                return match.group(0)  # URL 无效时返回原始链接
+
+            if url_info:
+                title = url_info.get("title")
+                if title:
+                    return f"[{title} - {hostname}]({url})"
+                else:
+                    return f"[{hostname}]({url})"
+            else:
+                # 若无元数据，只显示域名
+                return f"[{hostname}]({url})"
+
+        # 否则保持原始链接
+        return match.group(0)
+
+    # 匹配 Markdown 链接: [text](url)
+    md_link_regex = re.compile(r"\[([^\]]+)]\(([^)]+)\)")
+    return md_link_regex.sub(replace_link, md_content)
 
 
 def normalize_url(
@@ -649,16 +719,16 @@ async def process_urls(
             # 根据错误信息收集坏 hostname
             msg = str(e).lower()
             if any(
-                k in msg
-                for k in (
-                    "couldn't resolve host name",
-                    "could not be resolved",
-                    "err_cert_common_name_invalid",
-                    "err_connection_refused",
-                )
+                    k in msg
+                    for k in (
+                            "couldn't resolve host name",
+                            "could not be resolved",
+                            "err_cert_common_name_invalid",
+                            "err_connection_refused",
+                    )
             ) or (
-                e.__class__.__name__ in ("ParamValidationError", "AssertionFailureError")
-                and ("domain" in msg or "resolve host name" in msg)
+                    e.__class__.__name__ in ("ParamValidationError", "AssertionFailureError")
+                    and ("domain" in msg or "resolve host name" in msg)
             ):
                 hostname = ""
                 try:

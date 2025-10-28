@@ -1,19 +1,27 @@
+import json
 import os
 from dataclasses import dataclass
 from pprint import pprint
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
+import aiofiles
 from dotenv import load_dotenv
+from pydantic import BaseModel
 
+from tool.build_refs import build_references, build_image_references
+from tool.code_sandbox import CodeSandbox
 from tool.date_tools import format_date_range, format_date_based_on_type
 from tool.error_analyzer import analyze_steps
 from tool.evaluator import evaluate_question, evaluation_answer
+from tool.finalizer import finalizeAnswer
+from tool.image_tools import dedup_images_with_embeddings, filter_images
 from tool.jina_dedup import dedup_queries
 from tool.jina_search import search
 from tool.queryrewriter import rewrite_query
 from tool.serp_cluster import serp_cluster
-from tool.text_tools import remove_html_tags, choose_k
+from tool.text_tools import remove_html_tags, choose_k, build_md_from_answer, repairMarkdownFootnotesOuter, \
+    fixCodeBlockIndentation, convertHtmlTablesToMd, repair_markdown_final
 from utils.action_tracker import ActionTracker
 from utils.safe_generator import ObjectGeneratorSafe
 from utils.schemas import MAX_QUERIES_PER_STEP, LANGUAGE_CODE, set_langugae, set_search_language_code, \
@@ -980,10 +988,314 @@ You decided to think out of the box or cut from a completely different angle.
 
             allow_read = False
         elif this_step.get("action") == 'coding' and this_step.get("codingIssue"):
+            sandbox = CodeSandbox(
+                {
+                    "allContext": all_context,
+                    "URLs": weight_URLs[:20],
+                    "allKnowledge": all_knowledge,
+                },
+                context,
+            )
+            try:
+                result = await sandbox.solve(this_step['codingIssue'])
+                all_knowledge.append({
+                    'question': f"What is the solution to the coding issue: {this_step['codingIssue']}?",
+                    'answer': result.solution.output,
+                    'sourceCode': result.solution.code,
+                    'type': 'coding',
+                    'updated': format_date_based_on_type(datetime.now(), 'full')
+                })
+                diary_context.append(f"""
+At step {step}, you took the **coding** action and try to solve the coding issue: {this_step['codingIssue']}.
+You found the solution and add it to your knowledge for future reference.
+""")
+                update_context({
+                    'total_step': total_step,
+                    'result': result,
+                    **this_step.__dict__
+                })
+            except Exception as e:
+                log.error("Error solving coding issue:" + str({
+                    'error': e if isinstance(e, str) else str(e),
+                }))
+                diary_context.append(f"""
+At step {step}, you took the **coding** action and try to solve the coding issue: {this_step['codingIssue']}.
+But unfortunately, you failed to solve the issue. You need to think out of the box or cut from a completely different angle.
+""")
+                update_context({
+                    'total_step': total_step,
+                    'result': 'You have tried all possible solutions and found no new information. You must think out of the box or different angle!!!',
+                    **this_step.__dict__
+                })
+            finally:
+                allow_read = False
 
-            break
-                
-                
+        await store_context(
+            system,
+            schema,
+            {
+                'allContext': all_context,
+                'allKeywords': all_keywords,
+                'allQuestions': all_questions,
+                'allKnowledge': all_knowledge,
+                'weightedURLs': weighted_urls,
+                'msgWithKnowledge': msg_with_knowledge,
+            },
+            total_step
+        )
+        # break
+        await asyncio.sleep(STEP_SLEEP)
+    if not getattr(this_step, "isFinal", False):
+        # 计算 token 使用百分比
+        total_usage = context.tokenTracker.getTotalUsage()
+        percent = (total_usage["totalTokens"] / token_budget) * 100
+        log.info(
+            f"Beast mode!!! budget {percent:.2f}%" +
+            str({
+                "usage": context.tokenTracker.getTotalUsageSnakeCase(),
+                "evaluationMetrics": evaluation_metrics,
+                "maxBadAttempts": max_bad_attempts,
+            }),
+        )
+        step += 1
+        total_step += 1
+        system = get_prompt(
+            diary_context,
+            all_questions,
+            all_keywords,
+            False,
+            False,
+            False,
+            False,
+            False,
+            all_knowledge,
+            weight_URLs,
+            True,
+        )["system"]
+        schema = build_agent_action_payload(False, False, True, False, False, question)
+        msg_with_knowledge = compose_msgs(messages, all_knowledge, question, final_answer_PIP)
+
+        result = await generator.generate_object({
+            {
+                "model": "agentBeastMode",
+                "schema": schema,
+                "system": system,
+                "messages": msg_with_knowledge,
+                "numRetries": 2,
+            }
+        })
+        obj = result.get("object", {}) if isinstance(result, dict) else {}
+        thisStep = {
+            "action": obj.get("action"),
+            "think": obj.get("think"),
+            **(obj.get(obj.get("action"), {}) if isinstance(obj.get(obj.get("action")), dict) else {}),
+        }
+        # thisStep 视为 AnswerAction
+        thisStep["isFinal"] = True
+
+        # 跟踪动作
+        context.actionTracker.trackAction({
+            "totalStep": total_step,
+            "thisStep": thisStep,
+            "gaps": gaps
+        })
+
+    answer_step = this_step
+    if trivial_question:
+        answer_step["mdAnswer"] = build_md_from_answer(answer_step)
+
+    elif not answer_step.get("isAggregated"):
+        # 处理答案：修复 Markdown、URL、代码块、脚注
+        finalized_answer = await finalizeAnswer(
+            answer_step["answer"],
+            all_knowledge,
+            context,
+            schema
+        )
+
+        repaired_answer = repairMarkdownFootnotesOuter(
+            fixCodeBlockIndentation(
+                fix_bad_url_md_links(
+                    convertHtmlTablesToMd(finalized_answer),
+                    all_URLs
+                )
+            )
+        )
+
+        answer_step["answer"] = repair_markdown_final(repaired_answer)
+
+        # 生成引用
+        result = await build_references(
+            answer_step["answer"],
+            all_web_contents,
+            context,
+            80,
+            max_ref,
+            min_rel_score,
+            only_hostnames
+        )
+
+        answer_step["answer"] = result["answer"]
+        answer_step["references"] = result["references"]
+
+        await update_references(answer_step, all_URLs)
+        answer_step["mdAnswer"] = repairMarkdownFootnotesOuter(build_md_from_answer(answer_step))
+
+        # 图片引用逻辑
+        if image_objects and with_images:
+            try:
+                image_refs = await build_image_references(
+                    answer_step["answer"],
+                    image_objects,
+                    context
+                )
+                answer_step["imageReferences"] = image_refs
+
+                log.debug(
+                    "Image references built:",
+                    {
+                        "imageReferences": [
+                            {"url": i["url"], "score": i["relevanceScore"], "answerChunk": i["answerChunk"]}
+                            for i in image_refs
+                        ]
+                    }
+                )
+            except Exception as error:
+                log.error("Error building image references:", {"error": str(error)})
+                answer_step["imageReferences"] = []
+
+    elif answer_step.get("isAggregated"):
+        # 聚合模式：合并答案
+        answer_step["answer"] = "\n\n".join(candidate_answers)
+        # answerStep["answer"] = await reduceAnswers(candidateAnswers, context, SchemaGen)
+        answer_step["mdAnswer"] = repairMarkdownFootnotesOuter(build_md_from_answer(answer_step))
+
+        if with_images and answer_step.get("imageReferences"):
+            sorted_images = sorted(
+                answer_step["imageReferences"],
+                key=lambda img: img.get("relevanceScore", 0),
+                reverse=True
+            )
+
+            log.debug("[agent] all sorted image references:", {"count": len(sorted_images)})
+
+            deduped = dedup_images_with_embeddings(sorted_images, [])
+            filtered = filter_images(sorted_images, deduped)
+
+            log.debug("[agent] filtered images:", {"count": len(filtered)})
+
+            # 限制最多 10 张图像
+            answer_step["imageReferences"] = filtered[:10]
+
+    returned_urls = [r["url"] for r in weighted_urls[:num_returned_urls] if r and r.get("url")]
+    return {
+        "result": this_step,
+        "context": context,
+        "visitedURLs": returned_urls,  # deprecated
+        "readURLs": [url for url in visited_URLs if url not in bad_URLs],
+        "allURLs": [r["url"] for r in weighted_urls],
+        "imageReferences": this_step['image_references'] if with_images else None,
+    }
+
+
+def zodToJsonSchema(schema):
+    """
+    将 Pydantic BaseModel 转换为 JSON Schema 格式。
+    若不是 Pydantic 模型，则直接返回原对象。
+    """
+    try:
+        # ✅ 兼容 Pydantic v2
+        if hasattr(schema, "model_json_schema"):
+            return schema.model_json_schema()
+
+        # ✅ 兼容 Pydantic v1
+        if hasattr(schema, "schema"):
+            return schema.schema()
+
+        # ✅ 若传入的是 BaseModel 实例
+        if isinstance(schema, BaseModel):
+            if hasattr(schema, "model_json_schema"):
+                return schema.model_json_schema()
+            if hasattr(schema, "schema"):
+                return schema.schema()
+
+        # 其他情况：不是 Pydantic 模型，直接返回原数据
+        return schema
+
+    except Exception as e:
+        # 若转换失败，返回错误信息
+        return {"error": f"Failed to convert schema: {str(e)}"}
+
+
+async def store_context(prompt, schema, memory, step):
+    """
+    Python 等价版本的 storeContext()
+    :param prompt: str
+    :param schema: 任意对象 (Python dict)
+    :param memory: dict，包含 allContext, allKeywords, allQuestions, allKnowledge, weightedURLs, msgWithKnowledge
+    :param step: int
+    """
+    allContext = memory.get('allContext')
+    allKeywords = memory.get('allKeywords')
+    allQuestions = memory.get('allQuestions')
+    allKnowledge = memory.get('allKnowledge')
+    weightedURLs = memory.get('weightedURLs')
+    msgWithKnowledge = memory.get('msgWithKnowledge')
+
+    # 检查是否有类似 asyncLocalContext 的运行时上下文（Python 一般没有）
+    # 这里只是保留逻辑占位
+    async_local = getattr(__builtins__, "asyncLocalContext", None)
+    if async_local and getattr(async_local, "available", lambda: False)():
+        async_local.ctx.promptContext = {
+            "prompt": prompt,
+            "schema": schema,
+            "allContext": allContext,
+            "allKeywords": allKeywords,
+            "allQuestions": allQuestions,
+            "allKnowledge": allKnowledge,
+            "step": step,
+        }
+        return
+
+    try:
+        # 写入 prompt 文件
+        async with aiofiles.open(f"prompt-{step}.txt", "w", encoding="utf-8") as f:
+            await f.write(
+                f"""
+Prompt:
+{prompt}
+
+JSONSchema:
+{json.dumps(zodToJsonSchema(schema), indent=2, ensure_ascii=False)}
+"""
+            )
+
+        # 写入其他上下文文件
+        async with aiofiles.open("context.json", "w", encoding="utf-8") as f:
+            await f.write(json.dumps(allContext, indent=2, ensure_ascii=False))
+
+        async with aiofiles.open("queries.json", "w", encoding="utf-8") as f:
+            await f.write(json.dumps(allKeywords, indent=2, ensure_ascii=False))
+
+        async with aiofiles.open("questions.json", "w", encoding="utf-8") as f:
+            await f.write(json.dumps(allQuestions, indent=2, ensure_ascii=False))
+
+        async with aiofiles.open("knowledge.json", "w", encoding="utf-8") as f:
+            await f.write(json.dumps(allKnowledge, indent=2, ensure_ascii=False))
+
+        async with aiofiles.open("urls.json", "w", encoding="utf-8") as f:
+            await f.write(json.dumps(weightedURLs, indent=2, ensure_ascii=False))
+
+        async with aiofiles.open("messages.json", "w", encoding="utf-8") as f:
+            await f.write(json.dumps(msgWithKnowledge, indent=2, ensure_ascii=False))
+
+    except Exception as error:
+        logging.error(
+            "Context storage failed:",
+            {"error": str(error) if isinstance(error, Exception) else str(error)},
+        )
+
+
 async def test(keywords_queries, context, all_urls, web_contents, only_hostnames=None):
     await get_response(
         "What is the current market value of OpenAI company?",

@@ -456,3 +456,16 @@ class QueryRewriterSchema(BaseModel):
             f"Maximum {MAX_QUERIES_PER_STEP} queries allowed."
         ),
     )
+
+
+class CodeGeneratorSchema(BaseModel):
+    think: str = Field(
+        max_length=200,
+        description=f"Short explain or comments on the thought process behind the code. ${get_language_prompt()}"
+    )
+    code: str = Field(
+        description='The Python code that solves the problem and always use \'return\' statement '
+                    'to return the result. Focus on solving the core problem; '
+                    'No need for error handling or try-catch blocks or code comments. '
+                    'No need to declare variables that are already available, especially big long strings or arrays.'
+    )
