@@ -1,10 +1,11 @@
 # 这是一个示例 Python 脚本。
 import asyncio
+import logging
 import re, sys
 from typing import List, Dict, Any, Optional
 from pydantic import create_model, BaseModel, Field
 
-from agent import TrackerContext, execute_search_queries
+from agent import TrackerContext, execute_search_queries, KnowledgeItem, store_context
 from tool.image_tools import _test
 from tool.jina_dedup import dedup_queries
 from tool.jina_rerank import rerank_documents
@@ -15,7 +16,7 @@ from utils.action_tracker import ActionTracker
 from utils.get_log import get_logger
 from utils.safe_generator import ObjectGeneratorSafe
 from utils.schemas import build_agent_action_payload, MAX_QUERIES_PER_STEP
-from utils.url_tool import add_to_all_urls
+from utils.url_tool import add_to_all_urls, filter_urls, rank_urls, keep_k_per_hostname
 
 # 按 ⌃R 执行或将其替换为您的代码。
 # 按 双击 ⇧ 在所有地方搜索类、文件、工具窗口、操作和设置。
@@ -214,96 +215,81 @@ from tool.jina_search import *
 
 async def main():
     context = TrackerContext()
+    all_URLs={'https://timesofindia.indiatimes.com/technology/tech-news/microsoft-openai-announce-new-agreement-remove-the-biggest-contract-note-that-caused-tension-between-the-two-companies/articleshow/124880971.cms': {'title': 'Microsoft, OpenAI announce new agreement - The Times of India', 'url': 'https://timesofindia.indiatimes.com/technology/tech-news/microsoft-openai-announce-new-agreement-remove-the-biggest-contract-note-that-caused-tension-between-the-two-companies/articleshow/124880971.cms', 'description': 'The agreement, announced Tuesday, October 29, untangles key limitations on capital-raising that have constrained OpenAI since its 2019 partnership with', 'weight': 1, 'date': 'Oct 27, 2025'}, 'https://kaggle.com/discussions/general/551748': {'title': 'Using Huggingface NOT openai | Kaggle | Using Huggingface NOT openai - Kaggle', 'url': 'https://kaggle.com/discussions/general/551748', 'description': 'Is Hugging Face better than OpenAI? Hugging Face offers a free alternative to OpenAI APIs, providing versatile models for developers with budget constraints. While it may have limitations, its accessibility and flexibility make it a great option for experimentation and learning.', 'weight': 1, 'date': 'Dec 5, 2024'}}
+    visited_URLs=[]
+    bad_hostnames=['facebook.com']
+    current_question="Tell me about OpenAI and its main products."
+    boost_hostnames =['openai.com']
+    only_hostnames = None
 
-    #     allow_answer = False
-    #     allow_read = False
-    #     allow_reflect = False
-    #     allow_search = True
-    #     allow_coding = False
-    #     current_question = "Tell me about OpenAI and its main products."
-    #     schema = build_agent_action_payload(
-    #         allow_answer=allow_answer,
-    #         allow_read=allow_read,
-    #         allow_search=allow_search,
-    #         allow_reflect=allow_reflect,
-    #         allow_coding=allow_coding,
-    #         current_question=current_question,
-    #     )
-    #     generator = ObjectGeneratorSafe(None)
-    #     system = """
-    # Current date: Thu, 30 Oct 2025 10:16:29 GMT
-    #
-    # You are a deep research assistant. You are specialized in multistep reasoning.
-    # Using your best knowledge, conversation with the user and lessons learned, answer the user question with absolute certainty.
-    #
-    # Based on the current context, you must choose one of the following actions:
-    # <actions>
-    #
-    # <action-search>
-    # - Use vector data base to find relevant information
-    # - If the evidence obtained is not comprehensive, or if faced with open questions, constantly search from multiple perspectives.
-    # - Build a search request based on the deep intention behind the original question and the expected answer format
-    # - Add another request if the original question covers multiple aspects or elements and one query is not enough, each request focus on one specific aspect of the original question
-    #
-    # </action-search>
-    #
-    # </actions>
-    #
-    # Think step by step, choose the action, then respond by matching the schema of that action.
-    # """
-    #     msg_with_knowledge = [{'role': 'user', 'content': 'Tell me about OpenAI and its main products.'}]
-    #     result = await generator.generate_object({
-    #         "model": "agent",
-    #         "schema": schema,
-    #         "system": system,
-    #         "messages": msg_with_knowledge,
-    #         "numRetries": 2
-    #     })
-    #     action = None
-    #     for act_key, act in result.get("object").get("action").items():
-    #         if act is not None:
-    #             action = act_key
-    #     this_step = {
-    #         "action": action,
-    #         "think": result.get("object").get("think"),
-    #         **result.get("object").get("action").get(action)
-    #     }
-    #     # print(this_step)
-    # this_step = {'action': 'search',
-    #              'think': "lang:en I need to search for information about OpenAI and its main products because I don't have the complete, up-to-date details in my knowledge base. This action will help me gather accurate and comprehensive information about the organization and its key offerings.",
-    #              'search_requests': ['OpenAI main products overview']}
-    #
-    # this_step['search_requests'] = choose_k(
-    #     (await dedup_queries(
-    #         this_step['search_requests'],
-    #         [],
-    #         context.tokenTracker)
-    #      ).get("unique_queries"),
-    #     MAX_QUERIES_PER_STEP
-    # )
-    # all_URLs = {}
-    # all_web_contents = {}
-    # search_provider = "jina"
-    # esq_res = await execute_search_queries(
-    #     [{"q": q} for q in this_step.get('search_requests', '')],
-    #     context,
-    #     all_URLs,
-    #     all_web_contents,
-    #     None,  # 对应 TS 的 undefined
-    #     search_provider,
-    # )
-    # searched_queries, new_knowledge = esq_res.get("searchedQueries"), esq_res.get("newKnowledge")
-    # all_keywords = []
-    # all_knowledge = []
-    # all_keywords.extend(searched_queries)
-    # all_knowledge.extend(new_knowledge)
-    # sound_bites = ' '.join(k.answer for k in new_knowledge)
-    # keywords_queries = await rewrite_query(this_step, sound_bites, context)
-    # q_only = [q['q'] for q in keywords_queries]
+    if all_URLs and len(all_URLs) > 0:
+        filtered = filter_urls(
+            all_URLs,
+            visited_URLs,
+            bad_hostnames,
+            only_hostnames
+        )
+        # rerank
+        weighted_urls = await rank_urls(
+            filtered,
+            {
+                "question": current_question,
+                "boostHostnames": boost_hostnames
+            },
+            context
+        )
+        # 提升多样性：每个 hostname 最多留 top-2
+        weighted_urls = keep_k_per_hostname(weighted_urls, 2)
 
-    keywords_queries = [{'tbs': 'qdr:y', 'location': None, 'q': 'OpenAI revenue consumer enterprise'}, {'tbs': 'qdr:m', 'location': None, 'q': 'OpenAI API updates'}, {'tbs': 'qdr:y', 'location': None, 'q': 'OpenAI products 2025'}, {'tbs': 'qdr:y', 'location': None, 'q': 'ChatGPT Sora DALL-E comparison'}, {'tbs': 'qdr:m', 'location': None, 'q': 'OpenAI official docs'}]
-    q_only =['OpenAI products limitations', 'GPT-4 technical specifications', 'OpenAI product evolution history', 'ChatGPT vs Gemini vs Claude features', 'OpenAI latest API updates']
-    all_keywords = ['OpenAI main products overview']
+        logging.info("Weighted URLs: " + str({"count": weighted_urls}))
+    return
+
+
+
+
+
+    this_step = {'action': 'search',
+                 'think': "lang:en I need to search for information about OpenAI and its main products because I don't have the complete, up-to-date details in my knowledge base. This action will help me gather accurate and comprehensive information about the organization and its key offerings.",
+                 'search_requests': ['OpenAI main products overview']}
+    new_step = {
+        'total_step': 1,
+        'question': "Tell me about OpenAI and its main products.",
+        **this_step
+    }
+    print(new_step)
+    return
+
+    this_step['search_requests'] = choose_k(
+        (await dedup_queries(
+            this_step['search_requests'],
+            [],
+            context.tokenTracker)
+         ).get("unique_queries"),
+        MAX_QUERIES_PER_STEP
+    )
+    all_URLs = {}
+    all_web_contents = {}
+    search_provider = "jina"
+    esq_res = await execute_search_queries(
+        [{"q": q} for q in this_step.get('search_requests', '')],
+        context,
+        all_URLs,
+        all_web_contents,
+        None,  # 对应 TS 的 undefined
+        search_provider,
+    )
+    searched_queries, new_knowledge = esq_res.get("searchedQueries"), esq_res.get("newKnowledge")
+    all_keywords = []
+    all_knowledge = []
+    all_keywords.extend(searched_queries)
+    all_knowledge.extend(new_knowledge)
+    sound_bites = ' '.join(k.answer for k in new_knowledge)
+    keywords_queries = await rewrite_query(this_step, sound_bites, context)
+    q_only = [q['q'] for q in keywords_queries]
+
+    # keywords_queries = [{'tbs': 'qdr:y', 'location': None, 'q': 'OpenAI revenue consumer enterprise'}, {'tbs': 'qdr:m', 'location': None, 'q': 'OpenAI API updates'}, {'tbs': 'qdr:y', 'location': None, 'q': 'OpenAI products 2025'}, {'tbs': 'qdr:y', 'location': None, 'q': 'ChatGPT Sora DALL-E comparison'}, {'tbs': 'qdr:m', 'location': None, 'q': 'OpenAI official docs'}]
+    # q_only =['OpenAI products limitations', 'GPT-4 technical specifications', 'OpenAI product evolution history', 'ChatGPT vs Gemini vs Claude features', 'OpenAI latest API updates']
+    # all_keywords = ['OpenAI main products overview']
     uniq_q_only = choose_k(
         (
             await dedup_queries(
@@ -315,6 +301,7 @@ async def main():
         MAX_QUERIES_PER_STEP
     )
     temp = []
+    diary_context = []
 
     for q in uniq_q_only:
         matches = [kq for kq in keywords_queries if kq.get("q") == q]
@@ -326,6 +313,34 @@ async def main():
             temp.append({'q': q})
     keywords_queries = temp
     any_result = False
+    only_hostnames = None
+    if len(keywords_queries) > 0:
+        print(keywords_queries)
+        esq_res = await execute_search_queries(
+            keywords_queries,
+            context,
+            all_URLs,
+            all_web_contents,
+            only_hostnames,
+            search_provider,
+        )
+        searched_queries, new_knowledge = esq_res.get("searchedQueries"), esq_res.get("newKnowledge")
+
+        if len(searched_queries) > 0:
+            any_result = True
+            all_keywords.extend(searched_queries)
+            all_knowledge.extend(new_knowledge)
+            diary_context.append(f"""
+At step {1}, you took the **search** action and look for external information for the question: "Tell me about OpenAI and its main products.".
+In particular, you tried to search for the following keywords: "${", ".join(str(item["q"]) for item in keywords_queries)}".
+You found quite some information and add them to your URL list and **visit** them later when needed. 
+    """)
+            # update_context({
+            #     'total_step': total_step,
+            #     'question': current_question,
+            #     'result': result,
+            #     **this_step.__dict__
+            # })
     print(keywords_queries)
 
 

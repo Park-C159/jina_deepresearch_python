@@ -67,7 +67,7 @@ async def serp_cluster(
             trackers.actionTracker.track_think(think_txt)
 
         clusters = obj.get("clusters", [])
-        log.info(TOOL_NAME + str({" clusters": clusters}))
+        log.debug(TOOL_NAME + str({" clusters": clusters}))
         return clusters
 
     except Exception as error:

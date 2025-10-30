@@ -208,7 +208,7 @@ class ObjectGeneratorSafe:
             return {"object": result.get("object"), "usage": usage}
 
         except Exception as error:
-            print(error)
+            # print(error)
             # 第一次兜底：手动解析错误输出
             try:
                 error_result = await self._handle_generate_object_error(error)

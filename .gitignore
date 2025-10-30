@@ -4,3 +4,4 @@ format_test.json
 __pycache__
 */__pycache__
 .idea
+store_context/*

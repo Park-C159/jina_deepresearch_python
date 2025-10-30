@@ -81,6 +81,7 @@ class TokenTracker(EventEmitter):
             total.promptTokens += (prompt_tokens or 0) * scaler
             total.completionTokens += (completion_tokens or 0) * scaler
             total.totalTokens += (total_tokens or 0) * scaler
+        print(total)
         return total
 
     # 对应 TS: getTotalUsageSnakeCase()
@@ -89,9 +90,9 @@ class TokenTracker(EventEmitter):
         for item in self.usages:
             u = item.get("usage")
             scaler = 1
-            acc["prompt_tokens"] += (u.promptTokens or 0) * scaler
-            acc["completion_tokens"] += (u.completionTokens or 0) * scaler
-            acc["total_tokens"] += (u.totalTokens or 0) * scaler
+            acc["prompt_tokens"] += (u.get("promptTokens") or 0) * scaler
+            acc["completion_tokens"] += (u.get("completionTokens") or 0) * scaler
+            acc["total_tokens"] += (u.get("totalTokens") or 0) * scaler
         return acc
 
     # 对应 TS: getUsageBreakdown(): Record<string, number>

@@ -253,7 +253,7 @@ FAILURE IS NOT AN OPTION. EXECUTE WITH EXTREME PREJUDICE! ⚡️
 <action-coding>
 - This Python-based solution helps you handle programming tasks such as counting, filtering, transforming, sorting, regex extraction, and data analysis.
 - Typical implementations may use Python’s standard libraries (e.g., re, collections, itertools) or data analysis libraries (e.g., pandas, numpy).
-- Simply describe your problem in the "codingIssue" field. For small inputs, include actual example values; for larger datasets, specify variable names.
+- Simply describe your problem in the "coding_issue" field. For small inputs, include actual example values; for larger datasets, specify variable names.
 - No coding is required — experienced Python engineers will handle the implementation based on your description.
 </action-coding>          
 """
@@ -356,7 +356,7 @@ async def execute_search_queries(
         if only_hostnames and len(only_hostnames) > 0:
             query['q'] = f"{query['q']} site:{' OR site:'.join(only_hostnames)}"
         try:
-            log.info('Search query:'+str({'query': query}))
+            log.info('Search query:' + str({'query': query}))
             provider = search_provider or SEARCH_PROVIDER
             if provider in ('jina', 'arxiv'):
                 num = None if meta else 30
@@ -556,6 +556,7 @@ async def get_response(
     all_keywords = []
     candidate_answers = []
     all_knowledge = []
+    weighted_urls = []
 
     diary_context = []
     weight_URLs = []
@@ -624,6 +625,7 @@ async def get_response(
             allow_reflect = False
 
         # 尚未测试，重排序+每个hostname保留top-2个
+        print(visited_URLs, bad_hostnames, current_question, boost_hostnames)
         if all_URLs and len(all_URLs) > 0:
             filtered = filter_urls(
                 all_URLs,
@@ -632,7 +634,7 @@ async def get_response(
                 only_hostnames
             )
             # rerank
-            weighted_urls = rank_urls(
+            weighted_urls = await rank_urls(
                 filtered,
                 {
                     "question": current_question,
@@ -647,7 +649,6 @@ async def get_response(
 
         allow_read = allow_read and len(weight_URLs) > 0
         allow_search = allow_search and len(weight_URLs) < 50  # disable search when too many urls already
-        print(total_step, allow_answer, allow_read, allow_search, allow_reflect, allow_coding, current_question)
 
         generate_prompt = get_prompt(
             diary_context,
@@ -679,7 +680,6 @@ async def get_response(
             current_question,
             final_answer_PIP if current_question == question else None
         )
-        print(msg_with_knowledge)
         result = await generator.generate_object({
             "model": "agent",
             "schema": schema,
@@ -696,7 +696,6 @@ async def get_response(
             "think": result.get("object").get("think"),
             **result.get("object").get("action").get(action)
         }
-        print("this_step", this_step)
         actions = [allow_search, allow_read, allow_answer, allow_reflect, allow_coding]
         action_names = ['search', 'read', 'answer', 'reflect', 'coding']
 
@@ -767,11 +766,11 @@ Your journey ends here. You have successfully answered the original question. Co
                     break
                 else:
                     for e in evaluation_metrics[current_question]:
-                        if e.type == evaluation.type:
-                            e.numEvalsRequired -= 1
+                        if e.get("type") == evaluation.get("type"):
+                            e["numEvalsRequired"] -= 1
                     # 然后过滤
                     evaluation_metrics[current_question] = [
-                        e for e in evaluation_metrics[current_question] if e.numEvalsRequired > 0
+                        e for e in evaluation_metrics[current_question] if e.get("numEvalsRequired") > 0
                     ]
                     if evaluation.get("type") == 'strict' and evaluation.get("improvement_plan"):
                         final_answer_PIP.append(evaluation["improvement_plan"])
@@ -790,10 +789,7 @@ ${this_step.get("answer")}
 The evaluator thinks your answer is bad because: 
 ${evaluation.get("think")}
 """)
-                    error_analysis = await analyze_steps({
-                        diary_context,
-                        context
-                    })
+                    error_analysis = await analyze_steps(diary_context, context)
                     all_knowledge.append({
                         'question': f"""Why is the following answer bad for the question? Please reflect
 
@@ -844,7 +840,7 @@ Although you solved a sub-question, you still need to find the answer to the ori
             print("reflect")
             this_step['question2answer'] = choose_k(
                 (await dedup_queries(this_step['question2answer'], all_questions,
-                                     context.tokenTracker)).unique_queries,
+                                     context.tokenTracker)).get("unique_queries"),
                 MAX_REFLECT_PER_STEP
             )
             new_gap_questions = this_step['question2answer']
@@ -861,7 +857,7 @@ Although you solved a sub-question, you still need to find the answer to the ori
                 gaps.extend(new_gap_questions)
                 all_questions.extend(new_gap_questions)
                 update_context({
-                    **this_step.__dict__,
+                    **this_step,
                     'total_step': total_step,
                 })
             else:
@@ -870,7 +866,7 @@ Although you solved a sub-question, you still need to find the answer to the ori
             But then you realized you have asked them before. You decided to think out of the box or cut from a completely different angle. 
             """)
                 update_context({
-                    **this_step.__dict__,
+                    **this_step,
                     'total_step': total_step,
                     'result': "You have tried all possible questions and found no useful information. You must think out of the box or different angle!!!"
                 })
@@ -898,7 +894,7 @@ Although you solved a sub-question, you still need to find the answer to the ori
 
             all_keywords.extend(searched_queries)
             all_knowledge.extend(new_knowledge)
-            sound_bites = ' '.join(k['answer'] for k in new_knowledge)
+            sound_bites = ' '.join(k.answer for k in new_knowledge)
 
             if team_size > 1:
                 print("并行查询，暂时没有")
@@ -911,10 +907,11 @@ Although you solved a sub-question, you still need to find the answer to the ori
                         all_keywords,
                         context.tokenTracker
                     )
-                ).unique_queries,
+                ).get("unique_queries"),
                 MAX_QUERIES_PER_STEP
             )
             temp = []
+
             for q in uniq_q_only:
                 matches = [kq for kq in keywords_queries if kq.get("q") == q]
                 if len(matches) > 1:
@@ -928,7 +925,7 @@ Although you solved a sub-question, you still need to find the answer to the ori
             any_result = False
 
             if len(keywords_queries) > 0:
-                searched_queries, new_knowledge = await execute_search_queries(
+                esq_res = await execute_search_queries(
                     keywords_queries,
                     context,
                     all_URLs,
@@ -936,6 +933,7 @@ Although you solved a sub-question, you still need to find the answer to the ori
                     only_hostnames,
                     search_provider,
                 )
+                searched_queries, new_knowledge = esq_res.get("searchedQueries"), esq_res.get("newKnowledge")
 
                 if len(searched_queries) > 0:
                     any_result = True
@@ -950,7 +948,7 @@ You found quite some information and add them to your URL list and **visit** the
                         'total_step': total_step,
                         'question': current_question,
                         'result': result,
-                        **this_step.__dict__
+                        **this_step
                     })
             if not any_result or not keywords_queries:
                 diary_context.append(
@@ -963,7 +961,7 @@ You decided to think out of the box or cut from a completely different angle.
                 update_context({
                     'total_step': total_step,
                     'result': "You have tried all possible queries and found no new information. You must think out of the box or different angle!!!",
-                    **this_step.__dict__
+                    **this_step
                 })
             allow_search = False
             allow_answer = False
@@ -1007,35 +1005,35 @@ You decided to think out of the box or cut from a completely different angle.
                 context,
             )
             try:
-                result = await sandbox.solve(this_step['codingIssue'])
+                result = await sandbox.solve(this_step['coding_issue'])
                 all_knowledge.append({
-                    'question': f"What is the solution to the coding issue: {this_step['codingIssue']}?",
+                    'question': f"What is the solution to the coding issue: {this_step['coding_issue']}?",
                     'answer': result.solution.output,
                     'sourceCode': result.solution.code,
                     'type': 'coding',
                     'updated': format_date_based_on_type(datetime.now(), 'full')
                 })
                 diary_context.append(f"""
-At step {step}, you took the **coding** action and try to solve the coding issue: {this_step['codingIssue']}.
+At step {step}, you took the **coding** action and try to solve the coding issue: {this_step['coding_issue']}.
 You found the solution and add it to your knowledge for future reference.
 """)
                 update_context({
                     'total_step': total_step,
                     'result': result,
-                    **this_step.__dict__
+                    **this_step
                 })
             except Exception as e:
                 log.error("Error solving coding issue:" + str({
                     'error': e if isinstance(e, str) else str(e),
                 }))
                 diary_context.append(f"""
-At step {step}, you took the **coding** action and try to solve the coding issue: {this_step['codingIssue']}.
+At step {step}, you took the **coding** action and try to solve the coding issue: {this_step['coding_issue']}.
 But unfortunately, you failed to solve the issue. You need to think out of the box or cut from a completely different angle.
 """)
                 update_context({
                     'total_step': total_step,
                     'result': 'You have tried all possible solutions and found no new information. You must think out of the box or different angle!!!',
-                    **this_step.__dict__
+                    **this_step
                 })
             finally:
                 allow_read = False
@@ -1055,6 +1053,7 @@ But unfortunately, you failed to solve the issue. You need to think out of the b
         )
         # break
         await asyncio.sleep(STEP_SLEEP)
+
     if not getattr(this_step, "isFinal", False):
         # 计算 token 使用百分比
         total_usage = context.tokenTracker.get_total_usage()
@@ -1237,6 +1236,17 @@ def zodToJsonSchema(schema):
         return {"error": f"Failed to convert schema: {str(e)}"}
 
 
+def safe_json(obj):
+    """安全 JSON 序列化：如果 obj 为空，返回 'null'"""
+    if not obj and obj != 0:  # 排除数值 0
+        return "null"
+    try:
+        return json.dumps(obj, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logging.warning(f"Failed to serialize object: {e}")
+        return "null"
+
+
 async def store_context(prompt, schema, memory, step):
     """
     Python 等价版本的 storeContext()
@@ -1245,6 +1255,9 @@ async def store_context(prompt, schema, memory, step):
     :param memory: dict，包含 allContext, allKeywords, allQuestions, allKnowledge, weightedURLs, msgWithKnowledge
     :param step: int
     """
+    dir_path = f'./store_context/{step}/'
+    os.makedirs(dir_path, exist_ok=True)
+
     allContext = memory.get('allContext')
     allKeywords = memory.get('allKeywords')
     allQuestions = memory.get('allQuestions')
@@ -1252,58 +1265,40 @@ async def store_context(prompt, schema, memory, step):
     weightedURLs = memory.get('weightedURLs')
     msgWithKnowledge = memory.get('msgWithKnowledge')
 
-    # 检查是否有类似 asyncLocalContext 的运行时上下文（Python 一般没有）
-    # 这里只是保留逻辑占位
-    async_local = getattr(__builtins__, "asyncLocalContext", None)
-    if async_local and getattr(async_local, "available", lambda: False)():
-        async_local.ctx.promptContext = {
-            "prompt": prompt,
-            "schema": schema,
-            "allContext": allContext,
-            "allKeywords": allKeywords,
-            "allQuestions": allQuestions,
-            "allKnowledge": allKnowledge,
-            "step": step,
-        }
-        return
-
     try:
         # 写入 prompt 文件
-        async with aiofiles.open(f"prompt-{step}.txt", "w", encoding="utf-8") as f:
+        async with aiofiles.open(dir_path + f"prompt-{step}.txt", "w", encoding="utf-8") as f:
             await f.write(
                 f"""
 Prompt:
 {prompt}
 
 JSONSchema:
-{json.dumps(zodToJsonSchema(schema), indent=2, ensure_ascii=False)}
+{safe_json(schema)}
 """
             )
 
         # 写入其他上下文文件
-        async with aiofiles.open("context.json", "w", encoding="utf-8") as f:
-            await f.write(json.dumps(allContext, indent=2, ensure_ascii=False))
+        async with aiofiles.open(dir_path + "context.json", "w", encoding="utf-8") as f:
+            await f.write(safe_json(allContext))
 
-        async with aiofiles.open("queries.json", "w", encoding="utf-8") as f:
-            await f.write(json.dumps(allKeywords, indent=2, ensure_ascii=False))
+        async with aiofiles.open(dir_path + "queries.json", "w", encoding="utf-8") as f:
+            await f.write(safe_json(allKeywords))
 
-        async with aiofiles.open("questions.json", "w", encoding="utf-8") as f:
-            await f.write(json.dumps(allQuestions, indent=2, ensure_ascii=False))
+        async with aiofiles.open(dir_path + "questions.json", "w", encoding="utf-8") as f:
+            await f.write(safe_json(allQuestions))
 
-        async with aiofiles.open("knowledge.json", "w", encoding="utf-8") as f:
-            await f.write(json.dumps(allKnowledge, indent=2, ensure_ascii=False))
+        async with aiofiles.open(dir_path + "knowledge.json", "w", encoding="utf-8") as f:
+            await f.write(safe_json(allKnowledge))
 
-        async with aiofiles.open("urls.json", "w", encoding="utf-8") as f:
-            await f.write(json.dumps(weightedURLs, indent=2, ensure_ascii=False))
+        async with aiofiles.open(dir_path + "urls.json", "w", encoding="utf-8") as f:
+            await f.write(safe_json(weightedURLs))
 
-        async with aiofiles.open("messages.json", "w", encoding="utf-8") as f:
-            await f.write(json.dumps(msgWithKnowledge, indent=2, ensure_ascii=False))
+        async with aiofiles.open(dir_path + "messages.json", "w", encoding="utf-8") as f:
+            await f.write(safe_json(msgWithKnowledge))
 
     except Exception as error:
-        logging.error(
-            "Context storage failed:",
-            {"error": str(error) if isinstance(error, Exception) else str(error)},
-        )
+        logging.error(f"Context storage failed: {error}")
 
 
 async def main():
@@ -1317,7 +1312,7 @@ async def main():
         search_provider="jina",  # 如果没有配置 Jina API，可以传 None
         language_code="en",
         with_images=False,  # 如果你不需要图片分析就关掉
-        token_budget=50000,  # 最大 token 预算
+        token_budget=100000000,  # 最大 token 预算
         max_bad_attempts=2,  # 评估失败重试次数
         existing_context=None,
         messages=[],
