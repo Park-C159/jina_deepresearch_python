@@ -12,6 +12,7 @@ def get_prompt(query, think, context):
     current_month = current_time.month
     iso_str = datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
 
+
     return {
         'system': f"""You are an expert search query expander with deep psychological understanding.
 You optimize user queries by extensively analyzing potential user intents and generating comprehensive query variations.
@@ -220,7 +221,7 @@ async def rewrite_query(
         generator = ObjectGeneratorSafe(trackers.tokenTracker)
 
         async def _rewrite_one(req):
-            prompt = get_prompt(req, action.think, context)
+            prompt = get_prompt(req, action['think'], context)
             result = await generator.generate_object({
                 'model': TOOL_NAME,
                 'schema': QueryRewriterSchema,
@@ -232,7 +233,7 @@ async def rewrite_query(
             return result.get("object")["queries"]
 
         # 并发执行所有重写请求
-        query_results = await asyncio.gather(*(_rewrite_one(req) for req in action.search_requests))
+        query_results = await asyncio.gather(*(_rewrite_one(req) for req in action.get("search_requests")))
         all_queries = [q for sub in query_results for q in sub]
 
         logging.info(TOOL_NAME, {"queries": all_queries})

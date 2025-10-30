@@ -87,7 +87,7 @@ class TokenTracker(EventEmitter):
     def get_total_usage_snake_case(self) -> Dict[str, int]:
         acc = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         for item in self.usages:
-            u = item.usage
+            u = item.get("usage")
             scaler = 1
             acc["prompt_tokens"] += (u.promptTokens or 0) * scaler
             acc["completion_tokens"] += (u.completionTokens or 0) * scaler

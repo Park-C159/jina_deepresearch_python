@@ -356,7 +356,7 @@ async def execute_search_queries(
         if only_hostnames and len(only_hostnames) > 0:
             query['q'] = f"{query['q']} site:{' OR site:'.join(only_hostnames)}"
         try:
-            log.debug('Search query:', {'query': query})
+            log.info('Search query:'+str({'query': query}))
             provider = search_provider or SEARCH_PROVIDER
             if provider in ('jina', 'arxiv'):
                 num = None if meta else 30
@@ -440,7 +440,7 @@ async def execute_search_queries(
                 "thisStep": {
                     "action": "search",
                     "think": "",
-                    "searchRequests": [old_query],
+                    "search_requests": [old_query],
                 }
             })
 
@@ -512,7 +512,7 @@ async def get_response(
         team_size=1
 ):
     step = 0  # 应该是0
-    total_step = 1  # 应该是0
+    total_step = 0  # 应该是0
     all_context = []
     log = get_logger("get_response")
 
@@ -532,6 +532,7 @@ async def get_response(
 
             # 取最后一个（如果有），取其 'text' 字段，否则空字符串
             question = text_contents[-1]['text'] if text_contents else ''
+
     elif messages:
         messages = [{'role': 'user', 'content': question.strip()}]
     else:
@@ -559,7 +560,7 @@ async def get_response(
     diary_context = []
     weight_URLs = []
 
-    allow_answer = True
+    allow_answer = False
     allow_read = True
     allow_search = True
     allow_reflect = True
@@ -575,7 +576,7 @@ async def get_response(
     }
 
     all_URLs = {}
-    all_web_contents = []
+    all_web_contents = {}
     visited_URLs = []
     bad_URLs = []
     image_objects = []
@@ -646,6 +647,7 @@ async def get_response(
 
         allow_read = allow_read and len(weight_URLs) > 0
         allow_search = allow_search and len(weight_URLs) < 50  # disable search when too many urls already
+        print(total_step, allow_answer, allow_read, allow_search, allow_reflect, allow_coding, current_question)
 
         generate_prompt = get_prompt(
             diary_context,
@@ -670,13 +672,14 @@ async def get_response(
             allow_coding=allow_coding,
             current_question=current_question,
         )
+
         msg_with_knowledge = compose_msgs(
             messages,
             all_knowledge,
             current_question,
             final_answer_PIP if current_question == question else None
         )
-
+        print(msg_with_knowledge)
         result = await generator.generate_object({
             "model": "agent",
             "schema": schema,
@@ -691,7 +694,9 @@ async def get_response(
         this_step = {
             "action": action,
             "think": result.get("object").get("think"),
+            **result.get("object").get("action").get(action)
         }
+        print("this_step", this_step)
         actions = [allow_search, allow_read, allow_answer, allow_reflect, allow_coding]
         action_names = ['search', 'read', 'answer', 'reflect', 'coding']
 
@@ -702,15 +707,14 @@ async def get_response(
             "thisStep": this_step,
             "gaps": gaps,
         })
-        allow_answer = True
-        allow_reflect = True
-        allow_search = True
-        allow_read = True
-        allow_coding = True
-        this_step["action"] = 'answer'
-        this_step["answer"] = "OpenAI is a big company"
         evaluation_metrics[current_question] = [{"type": "strict", "numEvalsRequired": max_bad_attempts}]
+        allow_answer = True
+        allow_read = True
+        allow_search = True
+        allow_reflect = True
+        allow_coding = True
         if this_step.get("action") is not None and this_step["action"] == "answer":
+            print("answer")
             if total_step == 1 and not no_direct_answer:
                 this_step["isFinal"] = True
                 trivial_question = True
@@ -837,6 +841,7 @@ Although you solved a sub-question, you still need to find the answer to the ori
                 if current_question in gaps:
                     gaps.remove(current_question)
         elif this_step['action'] == 'reflect' and this_step.get('question2answer'):
+            print("reflect")
             this_step['question2answer'] = choose_k(
                 (await dedup_queries(this_step['question2answer'], all_questions,
                                      context.tokenTracker)).unique_queries,
@@ -871,23 +876,26 @@ Although you solved a sub-question, you still need to find the answer to the ori
                 })
 
             allow_reflect = False
-        elif this_step['action'] == 'search' and this_step.get('searchRequests'):
-            this_step['searchRequests'] = choose_k(
+        elif this_step['action'] == 'search' and this_step.get('search_requests'):
+            print('search')
+            this_step['search_requests'] = choose_k(
                 (await dedup_queries(
-                    this_step['searchRequests'],
+                    this_step['search_requests'],
                     [],
                     context.tokenTracker)
-                 ).unique_queries,
+                 ).get("unique_queries"),
                 MAX_QUERIES_PER_STEP
             )
-            searched_queries, new_knowledge = await execute_search_queries(
-                [{"q": q} for q in this_step.get('searchRequests', '')],
+            esq_res = await execute_search_queries(
+                [{"q": q} for q in this_step.get('search_requests', '')],
                 context,
                 all_URLs,
                 all_web_contents,
                 None,  # 对应 TS 的 undefined
                 search_provider,
             )
+            searched_queries, new_knowledge = esq_res.get("searchedQueries"), esq_res.get("newKnowledge")
+
             all_keywords.extend(searched_queries)
             all_knowledge.extend(new_knowledge)
             sound_bites = ' '.join(k['answer'] for k in new_knowledge)
@@ -900,7 +908,7 @@ Although you solved a sub-question, you still need to find the answer to the ori
                 (
                     await dedup_queries(
                         q_only,
-                        all_knowledge,
+                        all_keywords,
                         context.tokenTracker
                     )
                 ).unique_queries,
@@ -959,7 +967,8 @@ You decided to think out of the box or cut from a completely different angle.
                 })
             allow_search = False
             allow_answer = False
-        elif this_step['action'] == 'visit' and this_step.get('URLTargets') and len(url_list) > 0:
+        elif this_step['action'] == 'visit' and this_step.get('URL_targets') and len(url_list) > 0:
+            print('visit')
             this_step['URLTargets'] = [
                 normalize_url(url_list[idx - 1])
                 for idx in (this_step.get('URLTargets') or [])  # 等价于 (thisStep.URLTargets as number[])
@@ -987,7 +996,8 @@ You decided to think out of the box or cut from a completely different angle.
                 )
 
             allow_read = False
-        elif this_step.get("action") == 'coding' and this_step.get("codingIssue"):
+        elif this_step.get("action") == 'coding' and this_step.get("coding_issue"):
+            print('coding')
             sandbox = CodeSandbox(
                 {
                     "allContext": all_context,
@@ -1047,12 +1057,12 @@ But unfortunately, you failed to solve the issue. You need to think out of the b
         await asyncio.sleep(STEP_SLEEP)
     if not getattr(this_step, "isFinal", False):
         # 计算 token 使用百分比
-        total_usage = context.tokenTracker.getTotalUsage()
-        percent = (total_usage["totalTokens"] / token_budget) * 100
+        total_usage = context.tokenTracker.get_total_usage()
+        percent = (total_usage.totalTokens / token_budget) * 100
         log.info(
             f"Beast mode!!! budget {percent:.2f}%" +
             str({
-                "usage": context.tokenTracker.getTotalUsageSnakeCase(),
+                "usage": context.tokenTracker.get_total_usage_snake_case(),
                 "evaluationMetrics": evaluation_metrics,
                 "maxBadAttempts": max_bad_attempts,
             }),
@@ -1187,7 +1197,7 @@ But unfortunately, you failed to solve the issue. You need to think out of the b
             # 限制最多 10 张图像
             answer_step["imageReferences"] = filtered[:10]
 
-    returned_urls = [r["url"] for r in weighted_urls[:num_returned_urls] if r and r.get("url")]
+    returned_urls = [r["url"] for r in weight_URLs[:num_returned_urls] if r and r.get("url")]
     return {
         "result": this_step,
         "context": context,
@@ -1296,82 +1306,33 @@ JSONSchema:
         )
 
 
-async def test(keywords_queries, context, all_urls, web_contents, only_hostnames=None):
-    await get_response(
-        "What is the current market value of OpenAI company?",
-        "zh",
-        "jina",
-        # messages=[{
-        #     'role': 'user',
-        #     'content': "请访问www.example.com",
-        # }],
-        language_code="zh"
+async def main():
+    # 初始化 tracker 上下文
+    context = TrackerContext()
+
+    # 调用 get_response
+    result = await get_response(
+        question="Tell me about OpenAI and its main products.",
+        search_languge_code="en",
+        search_provider="jina",  # 如果没有配置 Jina API，可以传 None
+        language_code="en",
+        with_images=False,  # 如果你不需要图片分析就关掉
+        token_budget=50000,  # 最大 token 预算
+        max_bad_attempts=2,  # 评估失败重试次数
+        existing_context=None,
+        messages=[],
+        num_returned_urls=5,
+        no_direct_answer=False,
+        boost_hostnames=["openai.com"],
+        bad_hostnames=["facebook.com"],
+        only_hostnames=None,
+        max_ref=5,
+        min_rel_score=0.7,
+        team_size=1
     )
-    # pprint(result)
+
+    pprint(result["result"])
 
 
 if __name__ == "__main__":
-    # 测试数据
-    web_contents = {
-        "references": [
-            {
-                "url": "https://example.com/news/123",
-                "exactQuote": None,
-                "dateTime": None,
-            },
-            {
-                "url": "http://another-site.org/info",
-                # 已有 exactQuote
-                "exactQuote": "This is an important fact!",
-                # 已有 dateTime
-                "dateTime": "2023-10-10T09:20:00Z",
-            },
-            {
-                "url": "https://example.com/news/456",
-                # exactQuote 不存在
-            },
-        ]
-    }
-    all_urls = {}
-    keywords_queries = [
-        {"q": "苹果最新的M系列芯片，都有哪些优点？"},
-        {"q": "英伟达最新芯片是什么？有哪些优缺点？"},
-    ]
-
-
-    class TrackerContext:
-        def __init__(self):
-            self.tokenTracker = TokenTracker()
-            self.actionTracker = ActionTracker()
-
-
-    context = TrackerContext()
-    asyncio.run(test(keywords_queries, context, all_urls, web_contents))
-
-    # print(prompt["system"])
-
-# if __name__ == "__main__":
-#     knowledge_items = [
-#         KnowledgeItem(
-#             question="What is the capital of France?",
-#             answer="Paris is the capital of France.",
-#             type="url",
-#             updated="2025-10-14",
-#             references=["https://example.com/france"]
-#         )
-#     ]
-#     pip = [
-#         "Add more real-world examples.",
-#         "Include counter-intuitive insights."
-#     ]
-#     history = [  # 已有的 CoreMessage
-#         {"role": "user", "content": "What is life?"},
-#         {"role": "assistant", "content": "Life is..."}
-#     ]
-#     full_msgs = compose_msgs(history, knowledge_items, "How to live a meaningful life?", pip)
-#     for m in full_msgs:
-#         print(m)
-
-# msgs = build_msgs_from_knowledge(knowledge_items)
-# for msg in msgs:
-#     print(msg)
+    asyncio.run(main())

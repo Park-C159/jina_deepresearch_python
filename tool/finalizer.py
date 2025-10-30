@@ -43,7 +43,7 @@ Your task is to revise the provided markdown content (written by your junior int
 1. Avoid any bullet points or numbered lists, use natural language instead.
 2. Extend the content with 5W1H strategy and add more details to make it more informative and engaging. Use available knowledge to ground facts and fill in missing information.
 3. Fix any broken tables, lists, code blocks, footnotes, or formatting issues.
-4. Tables are good! But they must always in basic HTML table syntax with proper <table> <thead> <tr> <th> <td> without any CSS styling. STRICTLY AVOID any markdown table syntax. HTML Table should NEVER BE fenced with (\`\`\`html) triple backticks.
+4. Tables are good! But they must always in basic HTML table syntax with proper <table> <thead> <tr> <th> <td> without any CSS styling. STRICTLY AVOID any markdown table syntax. HTML Table should NEVER BE fenced with (```html) triple backticks.
 5. Replace any obvious placeholders or Lorem Ipsum values such as "example.com" with the actual content derived from the knowledge.
 6. Latex are good! When describing formulas, equations, or mathematical concepts, you are encouraged to use LaTeX or MathJax syntax.
 7. Your output language must be the same as user input language.

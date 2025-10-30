@@ -67,25 +67,7 @@ def build_agent_action_model(
         Field(..., description=f"Concisely explain your reasoning process in {get_language_prompt()}."),
     )
     action_fields = {}
-    # annotation = {
-    #     'think': (
-    #         constr(max_length=500),
-    #         Field(..., description=f"Concisely explain your reasoning process in {get_language_prompt()}."),
-    #     ),
-    #     'action': (
-    #         dict,
-    #         Field(
-    #             ...,
-    #             description="Show exactly all action from the available actions, "
-    #                         "fill in the corresponding action schema required. "
-    #                         "Keep the reasons in mind: "
-    #                         "(1) What specific information is still needed? "
-    #                         "(2) Why is this action most likely to provide that information? "
-    #                         "(3) What alternatives did you consider and why were they rejected? "
-    #                         "(4) How will this action advance toward the complete answer?"
-    #         ),
-    #     ),
-    # }
+
     # 2. 启用的动作名
     enabled_actions: list[str] = []
     action_schemas = {}

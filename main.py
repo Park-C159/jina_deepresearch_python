@@ -4,11 +4,17 @@ import re, sys
 from typing import List, Dict, Any, Optional
 from pydantic import create_model, BaseModel, Field
 
+from agent import TrackerContext, execute_search_queries
 from tool.image_tools import _test
+from tool.jina_dedup import dedup_queries
 from tool.jina_rerank import rerank_documents
+from tool.queryrewriter import rewrite_query
 from tool.serp_cluster import serp_cluster
+from tool.text_tools import choose_k
 from utils.action_tracker import ActionTracker
 from utils.get_log import get_logger
+from utils.safe_generator import ObjectGeneratorSafe
+from utils.schemas import build_agent_action_payload, MAX_QUERIES_PER_STEP
 from utils.url_tool import add_to_all_urls
 
 # 按 ⌃R 执行或将其替换为您的代码。
@@ -207,54 +213,120 @@ from tool.jina_search import *
 
 
 async def main():
-    class TrackerContext:
-        def __init__(self):
-            self.tokenTracker = TokenTracker()
-            self.actionTracker = ActionTracker()
+    context = TrackerContext()
 
-    # 最里层单条 cluster
-    class ClusterItem(BaseModel):
-        question: str
-        summary: str
-        insight: str
-        urls: List[str]
-        search_advice: str = ""
+    #     allow_answer = False
+    #     allow_read = False
+    #     allow_reflect = False
+    #     allow_search = True
+    #     allow_coding = False
+    #     current_question = "Tell me about OpenAI and its main products."
+    #     schema = build_agent_action_payload(
+    #         allow_answer=allow_answer,
+    #         allow_read=allow_read,
+    #         allow_search=allow_search,
+    #         allow_reflect=allow_reflect,
+    #         allow_coding=allow_coding,
+    #         current_question=current_question,
+    #     )
+    #     generator = ObjectGeneratorSafe(None)
+    #     system = """
+    # Current date: Thu, 30 Oct 2025 10:16:29 GMT
+    #
+    # You are a deep research assistant. You are specialized in multistep reasoning.
+    # Using your best knowledge, conversation with the user and lessons learned, answer the user question with absolute certainty.
+    #
+    # Based on the current context, you must choose one of the following actions:
+    # <actions>
+    #
+    # <action-search>
+    # - Use vector data base to find relevant information
+    # - If the evidence obtained is not comprehensive, or if faced with open questions, constantly search from multiple perspectives.
+    # - Build a search request based on the deep intention behind the original question and the expected answer format
+    # - Add another request if the original question covers multiple aspects or elements and one query is not enough, each request focus on one specific aspect of the original question
+    #
+    # </action-search>
+    #
+    # </actions>
+    #
+    # Think step by step, choose the action, then respond by matching the schema of that action.
+    # """
+    #     msg_with_knowledge = [{'role': 'user', 'content': 'Tell me about OpenAI and its main products.'}]
+    #     result = await generator.generate_object({
+    #         "model": "agent",
+    #         "schema": schema,
+    #         "system": system,
+    #         "messages": msg_with_knowledge,
+    #         "numRetries": 2
+    #     })
+    #     action = None
+    #     for act_key, act in result.get("object").get("action").items():
+    #         if act is not None:
+    #             action = act_key
+    #     this_step = {
+    #         "action": action,
+    #         "think": result.get("object").get("think"),
+    #         **result.get("object").get("action").get(action)
+    #     }
+    #     # print(this_step)
+    # this_step = {'action': 'search',
+    #              'think': "lang:en I need to search for information about OpenAI and its main products because I don't have the complete, up-to-date details in my knowledge base. This action will help me gather accurate and comprehensive information about the organization and its key offerings.",
+    #              'search_requests': ['OpenAI main products overview']}
+    #
+    # this_step['search_requests'] = choose_k(
+    #     (await dedup_queries(
+    #         this_step['search_requests'],
+    #         [],
+    #         context.tokenTracker)
+    #      ).get("unique_queries"),
+    #     MAX_QUERIES_PER_STEP
+    # )
+    # all_URLs = {}
+    # all_web_contents = {}
+    # search_provider = "jina"
+    # esq_res = await execute_search_queries(
+    #     [{"q": q} for q in this_step.get('search_requests', '')],
+    #     context,
+    #     all_URLs,
+    #     all_web_contents,
+    #     None,  # 对应 TS 的 undefined
+    #     search_provider,
+    # )
+    # searched_queries, new_knowledge = esq_res.get("searchedQueries"), esq_res.get("newKnowledge")
+    # all_keywords = []
+    # all_knowledge = []
+    # all_keywords.extend(searched_queries)
+    # all_knowledge.extend(new_knowledge)
+    # sound_bites = ' '.join(k.answer for k in new_knowledge)
+    # keywords_queries = await rewrite_query(this_step, sound_bites, context)
+    # q_only = [q['q'] for q in keywords_queries]
 
-    # 最外层响应
-    class SerpClusterResponse(BaseModel):
-        think: str = Field(default="", description="模型思考过程")
-        clusters: List[ClusterItem]
+    keywords_queries = [{'tbs': 'qdr:y', 'location': None, 'q': 'OpenAI revenue consumer enterprise'}, {'tbs': 'qdr:m', 'location': None, 'q': 'OpenAI API updates'}, {'tbs': 'qdr:y', 'location': None, 'q': 'OpenAI products 2025'}, {'tbs': 'qdr:y', 'location': None, 'q': 'ChatGPT Sora DALL-E comparison'}, {'tbs': 'qdr:m', 'location': None, 'q': 'OpenAI official docs'}]
+    q_only =['OpenAI products limitations', 'GPT-4 technical specifications', 'OpenAI product evolution history', 'ChatGPT vs Gemini vs Claude features', 'OpenAI latest API updates']
+    all_keywords = ['OpenAI main products overview']
+    uniq_q_only = choose_k(
+        (
+            await dedup_queries(
+                q_only,
+                all_keywords,
+                context.tokenTracker
+            )
+        ).get("unique_queries"),
+        MAX_QUERIES_PER_STEP
+    )
+    temp = []
 
-    trackers = TrackerContext()
-    schema_gen = SerpClusterResponse
-    results = [
-        {
-            "title": "Apple unveils new M-series chip",
-            "url": "https://news.example.com/apple-m3",
-            "description": "Apple announced M3 with GPU improvements and efficiency gains...",
-            "weight": 1,
-            "date": "2025-10-10",
-        },
-        {
-            "title": "NVIDIA GTC 2025 keynote highlights",
-            "url": "https://blog.example.com/gtc-2025",
-            "description": "Key takeaways: AI hardware roadmap, inference platforms, ecosystem...",
-            "weight": 1,
-            "date": "2025-10-12",
-        },
-        {
-            "title": "M3 benchmark roundup",
-            "url": "https://review.example.com/m3-benchmarks",
-            "description": "Independent benchmarks show improved GPU performance and memory bandwidth...",
-            "weight": 1,
-            "date": "2025-10-11",
-        },
-    ]
-    clusters = await serp_cluster(results, trackers, schema_gen)
-    for c in clusters:
-        print(type(c), c)
-        print(c.get("question"))
-        print(c.get("insight"))
+    for q in uniq_q_only:
+        matches = [kq for kq in keywords_queries if kq.get("q") == q]
+        if len(matches) > 1:
+            temp.append({'q': q})
+        elif matches:
+            temp.append(matches[0])
+        else:
+            temp.append({'q': q})
+    keywords_queries = temp
+    any_result = False
+    print(keywords_queries)
 
 
 # 按装订区域中的绿色按钮以运行脚本。
@@ -264,4 +336,4 @@ async def main():
 if __name__ == "__main__":
     load_dotenv()
 
-    asyncio.run(_test())
+    asyncio.run(main())
