@@ -220,6 +220,28 @@ def json_schema_to_pydantic(schema: Dict[str, Any]) -> Any:
 
 from tool.jina_search import *
 
+async def test():
+    query = "What are the main products of OpenAI?"
+
+    # 示例文档
+    documents = [
+        "OpenAI develops artificial intelligence technologies and research models such as GPT and DALL·E.",
+        "Facebook is a social media platform used by billions of people worldwide.",
+        "Tesla focuses on electric vehicles and renewable energy products.",
+        "ChatGPT is a conversational AI model developed by OpenAI for natural language understanding.",
+        "Coca-Cola is a popular beverage company producing soft drinks."
+    ]
+    tracker = TokenTracker()
+    print("🔍 Running Jina rerank test...")
+    result = await rerank_documents(query, documents, tracker=tracker)
+
+    print("\n📊 Rerank results:")
+    print(result)
+    for i, r in enumerate(result["results"], start=1):
+        print(f"{i}. Score: {r['relevance_score']:.4f}")
+        print(f"   Text: {r['document']}\n")
+
+    print("✅ Test complete.")
 
 async def main():
     diary_context = []
@@ -551,4 +573,4 @@ async def main():
 if __name__ == "__main__":
     load_dotenv()
 
-    asyncio.run(main())
+    asyncio.run(test())

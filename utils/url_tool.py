@@ -2,12 +2,13 @@ import logging
 import math
 import re
 import urllib.parse
+from dataclasses import dataclass
 from datetime import datetime
 
 import aiohttp
 import asyncio
 
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 from tool.date_tools import format_date_based_on_type
 from tool.image_tools import process_image
@@ -23,6 +24,15 @@ import re
 import urllib.parse
 
 from utils.schemas import LANGUAGE_CODE
+
+
+@dataclass
+class KnowledgeItem:
+    question: str
+    answer: str
+    type: Optional[str] = None
+    updated: Optional[str] = None
+    references: Optional[List[str]] = None
 
 
 def extract_url_parts(url_str):
@@ -270,13 +280,13 @@ async def get_last_modified(url: str) -> str | None:
     api_url = f'https://api-beta-datetime.jina.ai?url={urllib.parse.quote(url)}'
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(api_url, timeout=10) as resp:
+            async with session.get(api_url, timeout=100) as resp:
                 data = await resp.json()
                 if data.get('bestGuess') and data.get('confidence', 0) >= 70:
                     return data['bestGuess']
         return None
     except Exception as e:
-        print('[ERROR] Failed to fetch last modified date', e)
+        print(f'[ERROR] Failed to fetch last modified date {url, e}')
         return None
 
 
@@ -675,9 +685,7 @@ async def process_urls(
             if not normalized:
                 return None
             url = normalized  # 统一用归一化后的 URL
-
             response = await read_url(url, True, context.tokenTracker, with_images)
-
             data = response["response"]["data"]
             guessed_time = await get_last_modified(url)
             if guessed_time:
@@ -712,17 +720,17 @@ async def process_urls(
                 question, data["content"], {}, context, url
             )
             all_knowledge.append(
-                {
-                    "question": f'What do expert say about "{question}"?',
-                    "answer": answer,
-                    "references": [data["url"]],
-                    "type": "url",
-                    "updated": (
+                KnowledgeItem(
+                    question=f'What do expert say about "{question}"?',
+                    answer=answer,
+                    type="url",
+                    updated=(
                         format_date_based_on_type(datetime.fromisoformat(guessed_time), "full")
                         if guessed_time
                         else None
                     ),
-                }
+                    references=[data["url"]]
+                )
             )
 
             # 处理页面内链接
@@ -743,7 +751,7 @@ async def process_urls(
             return {"url": url, "result": response}
 
         except Exception as e:
-            logging.error("Error reading URL:"+str({"url": url, "error": str(e)}))
+            logging.error("Error reading URL:" + str({"url": url, "error": str(e)}))
             bad_urls.append(url)
 
             # 根据错误信息收集坏 hostname

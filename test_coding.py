@@ -9,7 +9,7 @@ from tool.jina_classify_spam import classify_text
 from tool.jina_latechunk import cherry_pick
 from tool.read_tools import read_url
 from tool.segments import chunk_text
-from utils.url_tool import normalize_url, process_urls
+from utils.url_tool import normalize_url, process_urls, get_last_modified
 
 
 async def main():
@@ -26,19 +26,21 @@ async def main():
     image_objects = []
     web_contents = {}
 
-    result = await process_urls(
-        urls=urls,
-        context=context,
-        all_knowledge=all_knowledge,
-        all_urls=all_urls,
-        visited_urls=visited_urls,
-        bad_urls=bad_urls,
-        image_objects=image_objects,
-        question="What is Hugging Face Datasets?",
-        web_contents=web_contents,
-        with_images=True
-    )
-    # print(result)
+    # result = await process_urls(
+    #     urls=urls,
+    #     context=context,
+    #     all_knowledge=all_knowledge,
+    #     all_urls=all_urls,
+    #     visited_urls=visited_urls,
+    #     bad_urls=bad_urls,
+    #     image_objects=image_objects,
+    #     question="What is Hugging Face Datasets?",
+    #     web_contents=web_contents,
+    #     with_images=True
+    # )
+    url = "https://openai.com/zh-Hans-CN/news/"
+    result = await get_last_modified(url)
+    print(result)
     return
 
 

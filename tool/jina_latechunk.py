@@ -90,7 +90,7 @@ async def cherry_pick(
 
         q_emb = get_embeddings(
             [query],
-            trackers.token_tracker,
+            trackers.tokenTracker,
             {
                 'task': "retrieval.query",
                 'dimensions': 1024,
@@ -131,7 +131,7 @@ async def cherry_pick(
         return tagged
 
     except Exception as e:
-        log_error("Error in late chunking: ", e)
+        log_error(f"Error in late chunking: {e}")
         return long_context[: snippet_len * num_snippets]
 
 # ------------------ 示例 ------------------

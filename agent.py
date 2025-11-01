@@ -1,9 +1,8 @@
+import argparse
 import json
 import os
 from dataclasses import dataclass
 from pprint import pprint
-from typing import Optional, List, Dict, Any
-from datetime import datetime
 
 import aiofiles
 from dotenv import load_dotenv
@@ -1337,34 +1336,52 @@ JSONSchema:
 
 
 async def main():
-    # 初始化 tracker 上下文
-    context = TrackerContext()
+    parser = argparse.ArgumentParser(description="Run get_response with command-line arguments.")
+
+    parser.add_argument("--question", type=str, required=True, help="User question input")
+    parser.add_argument("--search_language_code", type=str, default="en", help="Language code for search")
+    parser.add_argument("--search_provider", type=str, default="jina", help="Search provider (e.g. jina, none)")
+    parser.add_argument("--language_code", type=str, default="en", help="Language code for response")
+    parser.add_argument("--with_images", action="store_true", help="Enable image analysis")
+    parser.add_argument("--token_budget", type=int, default=100000000, help="Maximum token budget")
+    parser.add_argument("--max_bad_attempts", type=int, default=2, help="Number of bad attempts before stopping")
+    parser.add_argument("--existing_context", type=str, default=None, help="Existing tracker context (if any)")
+    parser.add_argument("--num_returned_urls", type=int, default=5, help="Number of URLs to return")
+    parser.add_argument("--no_direct_answer", action="store_true", help="Disable direct answer mode")
+    parser.add_argument("--boost_hostnames", nargs="*", default=[], help="Hostnames to boost")
+    parser.add_argument("--bad_hostnames", nargs="*", default=[], help="Hostnames to penalize")
+    parser.add_argument("--only_hostnames", nargs="*", default=None, help="Restrict to specific hostnames")
+    parser.add_argument("--max_ref", type=int, default=50, help="Maximum reference count")
+    parser.add_argument("--min_rel_score", type=float, default=0.7, help="Minimum relevance score")
+    parser.add_argument("--team_size", type=int, default=1, help="Team size for parallel processing")
+
+    args = parser.parse_args()
 
     # 调用 get_response
     result = await get_response(
-        question="Tell me about OpenAI and its main products.",
-        search_languge_code="en",
-        search_provider="jina",  # 如果没有配置 Jina API，可以传 None
-        language_code="en",
-        with_images=False,  # 如果你不需要图片分析就关掉
-        token_budget=100000000,  # 最大 token 预算
-        max_bad_attempts=2,  # 评估失败重试次数
-        existing_context=None,
+        question=args.question,
+        search_languge_code=args.search_language_code,
+        search_provider=args.search_provider if args.search_provider.lower() != "none" else None,
+        language_code=args.language_code,
+        with_images=args.with_images,
+        token_budget=args.token_budget,
+        max_bad_attempts=args.max_bad_attempts,
+        existing_context=args.existing_context,
         messages=[],
-        num_returned_urls=5,
-        no_direct_answer=False,
-        boost_hostnames=["openai.com"],
-        bad_hostnames=["facebook.com"],
-        only_hostnames=None,
-        max_ref=50,
-        min_rel_score=0.7,
-        team_size=1
+        num_returned_urls=args.num_returned_urls,
+        no_direct_answer=args.no_direct_answer,
+        boost_hostnames=args.boost_hostnames,
+        bad_hostnames=args.bad_hostnames,
+        only_hostnames=args.only_hostnames,
+        max_ref=args.max_ref,
+        min_rel_score=args.min_rel_score,
+        team_size=args.team_size,
     )
+
     with open("result_output.txt", "a", encoding="utf-8") as f:
-        f.write(json.dumps(result, ensure_ascii=False) + "\n\n")
+        f.write(json.dumps(result, ensure_ascii=False, indent=2) + "\n\n")
 
     pprint(result["result"])
-
 
 if __name__ == "__main__":
     asyncio.run(main())
