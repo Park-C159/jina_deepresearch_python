@@ -2,15 +2,96 @@ import logging
 import math
 import re
 import urllib.parse
+from datetime import datetime
+
 import aiohttp
 import asyncio
 
 from typing import Dict, List, Any
-from tool.jina_rerank import rerank_documents
-from utils.get_log import get_logger
 
+from tool.date_tools import format_date_based_on_type
+from tool.jina_classify_spam import classify_text
+from tool.jina_latechunk import cherry_pick
+from tool.jina_rerank import rerank_documents
+from tool.read_tools import read_url
+from tool.segments import chunk_text
+from tool.text_tools import get_i18n_text
+from utils.get_log import get_logger
+from urllib.parse import urlparse
 import re
 import urllib.parse
+
+from utils.schemas import LANGUAGE_CODE
+
+
+def extract_url_parts(url_str):
+    """
+    提取 URL 的主机名（去掉 www. 前缀）和路径。
+    若解析失败则返回空字符串。
+    """
+    try:
+        parsed = urlparse(url_str)
+        hostname = parsed.hostname or ""
+        if hostname.startswith("www."):
+            hostname = hostname[4:]
+        path = parsed.path or ""
+        return {"hostname": hostname, "path": path}
+    except Exception as e:
+        logging.error(f"Error parsing URL: {url_str}", error=e)
+        return {"hostname": "", "path": ""}
+
+
+def normalize_host_name(host_str):
+    """
+    标准化主机名：
+      - 优先解析 URL 获取主机部分；
+      - 若解析失败，则尝试去掉 'www.' 前缀并小写化；
+    """
+    extract = extract_url_parts(host_str)
+    host = extract["hostname"]
+
+    if not host:
+        return host_str[4:].lower() if host_str.startswith("www.") else host_str.lower()
+
+    return host
+
+
+def fix_bad_url_md_links(md_content, all_urls):
+    """
+    修复 Markdown 链接中的“坏链接文本”：
+    如果链接文本与 URL 完全相同，则尝试替换为更易读的格式：
+    - 若在 all_urls 中有标题信息，则使用 [title - hostname](url)
+    - 否则使用 [hostname](url)
+    """
+
+    def replace_link(match):
+        text, url = match.group(1), match.group(2)
+
+        # 如果链接文本与 URL 完全一致，则尝试修复
+        if text == url:
+            url_info = all_urls.get(url)
+
+            try:
+                hostname = urllib.urlparse(url).hostname or url
+            except Exception:
+                return match.group(0)  # URL 无效时返回原始链接
+
+            if url_info:
+                title = url_info.get("title")
+                if title:
+                    return f"[{title} - {hostname}]({url})"
+                else:
+                    return f"[{hostname}]({url})"
+            else:
+                # 若无元数据，只显示域名
+                return f"[{hostname}]({url})"
+
+        # 否则保持原始链接
+        return match.group(0)
+
+    # 匹配 Markdown 链接: [text](url)
+    md_link_regex = re.compile(r"\[([^\]]+)]\(([^)]+)\)")
+    return md_link_regex.sub(replace_link, md_content)
 
 
 def normalize_url(
@@ -230,6 +311,33 @@ def smart_merge_strings(str1: str, str2: str) -> str:
         return str1 + str2
 
 
+def sort_select_urls(all_urls, max_urls=70):
+    """
+    等价于 TypeScript 的 sortSelectURLs。
+    根据 finalScore 降序排序，并返回前 max_urls 个结果。
+    """
+    if not all_urls:
+        return []
+
+    merged_items = []
+    for r in all_urls:
+        merged = smart_merge_strings(r.get("title"), r.get("description"))
+        merged_items.append({
+            "url": r.get("url"),
+            "score": r.get("finalScore", 0),
+            "merged": merged
+        })
+
+    # 过滤掉空 merged 的项
+    filtered = [item for item in merged_items if item["merged"]]
+
+    # 按 score 降序排序
+    sorted_items = sorted(filtered, key=lambda x: x.get("score", 0), reverse=True)
+
+    # 取前 max_urls 个
+    return sorted_items[:max_urls]
+
+
 def add_to_all_urls(r, all_urls, weight_delta=1):
     """
     r: SearchSnippet对象（dict或自定义类）
@@ -326,18 +434,27 @@ def normalize_count(cnt: int, total: int) -> float:
     return cnt / total if total else 0.0
 
 
-def extract_url_parts(url: str):
-    # 简单实现，按需要可改为 urllib.parse
-    if not url:
+def extract_url_parts(url_str: str) -> dict:
+    """
+    从 URL 中提取 hostname 与 path，与 TS 版本 extractUrlParts 等价。
+    """
+    try:
+        parsed = urlparse(url_str)
+        hostname = parsed.hostname or ""
+        if hostname.startswith("www."):
+            hostname = hostname[4:]
+        path = parsed.path or ""
+        return {"hostname": hostname, "path": path}
+    except Exception as e:
+        logging.error(f"Error parsing URL: {url_str}", exc_info=e)
         return {"hostname": "", "path": ""}
-    url = url.lstrip("https://").lstrip("http://")
-    if "/" not in url:
-        return {"hostname": url, "path": "/"}
-    host, rest = url.split("/", 1)
-    return {"hostname": host, "path": "/" + rest}
 
 
-def count_url_parts(url_items):
+def count_url_parts(url_items: list) -> dict:
+    """
+    统计 URL 的 hostname 和 path 前缀频次。
+    与 TypeScript countUrlParts 完全等价。
+    """
     hostname_count = {}
     path_prefix_count = {}
     total_urls = 0
@@ -345,25 +462,23 @@ def count_url_parts(url_items):
     for item in url_items:
         if not item or not item.get("url"):
             continue
-
         total_urls += 1
-        url: str = item["url"].lstrip("https://").lstrip("http://")
-        if "/" not in url:
-            hostname, path = url, "/"
-        else:
-            hostname, rest = url.split("/", 1)
-            path = "/" + rest
+        parts = extract_url_parts(item["url"])
+        hostname = parts["hostname"]
+        path = parts["path"]
 
-        # 统计 hostname
         hostname_count[hostname] = hostname_count.get(hostname, 0) + 1
 
-        # 统计路径前缀
-        segments = [seg for seg in path.split("/") if seg]
-        for idx in range(len(segments)):
-            prefix = "/" + "/".join(segments[: idx + 1])
+        segments = [s for s in path.split("/") if s]
+        for i in range(len(segments)):
+            prefix = "/" + "/".join(segments[: i + 1])
             path_prefix_count[prefix] = path_prefix_count.get(prefix, 0) + 1
 
-    return {"hostnameCount": hostname_count, "pathPrefixCount": path_prefix_count, "totalUrls": total_urls}
+    return {
+        "hostnameCount": hostname_count,
+        "pathPrefixCount": path_prefix_count,
+        "totalUrls": total_urls
+    }
 
 
 def filter_urls(
@@ -395,13 +510,18 @@ def filter_urls(
     return filtered
 
 
-def rank_urls(url_items, options=None, trackers=None):
+async def rank_urls(url_items: list, options: dict = None, trackers=None) -> list:
+    """
+    完整等价于 TypeScript 版本的 rankURLs()。
+    :param url_items: list of dict，包含 url/title/description/weight 等字段
+    :param options: 可配置的 boosting 参数
+    :param trackers: 可选，包含 tokenTracker
+    :return: 带有 boost 权重的排序结果列表
+    """
     if options is None:
         options = {}
-    if trackers is None:
-        trackers = None  # 如不需要使用可留空
 
-    # 默认参数
+    # === 默认参数 ===
     freq_factor = options.get("freqFactor", 0.5)
     hostname_boost_factor = options.get("hostnameBoostFactor", 0.5)
     path_boost_factor = options.get("pathBoostFactor", 0.4)
@@ -412,15 +532,17 @@ def rank_urls(url_items, options=None, trackers=None):
     question = options.get("question", "")
     boost_hostnames = options.get("boostHostnames", [])
 
-    # 统计 URL 部分
+    # === 统计 URL 部分 ===
     counts = count_url_parts(url_items)
     hostname_count = counts["hostnameCount"]
     path_prefix_count = counts["pathPrefixCount"]
     total_urls = counts["totalUrls"]
 
-    # Jina rerank 逻辑（异步调用转为同步阻塞，简化示例）
+    # === Jina rerank 逻辑 ===
     if question.strip():
         unique_content_map = {}
+
+        # Step 1: 按合并内容去重
         for idx, item in enumerate(url_items):
             merged = smart_merge_strings(item.get("title", ""), item.get("description", ""))
             unique_content_map.setdefault(merged, []).append(idx)
@@ -429,36 +551,21 @@ def rank_urls(url_items, options=None, trackers=None):
         unique_indices_map = list(unique_content_map.values())
         logging.debug(f"unique URLs: {len(url_items)} -> {len(unique_contents)}")
 
-        # 假设 rerank_documents 已改为同步或我们手动 await
-        # 这里用 asyncio.run 简单包裹，实际可调整
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-        if loop and loop.is_running():
-            # Jupyter 等已运行事件循环，用 create_task
-            results = asyncio.create_task(
-                rerank_documents(question, unique_contents, trackers.tokenTracker if trackers else None)
-            )
-            results = results.result()["results"]
-        else:
-            results = asyncio.run(
-                rerank_documents(question, unique_contents, trackers.tokenTracker if trackers else None)
-            )["results"]
-
-        for res in results:
+        token_tracker = getattr(trackers, "tokenTracker", None) if trackers else None
+        rerank_result = await rerank_documents(question, unique_contents, token_tracker)
+        for res in rerank_result.get("results", []):
             idx = res["index"]
             score = res["relevance_score"]
             boost = score * jina_rerank_factor
             for orig_idx in unique_indices_map[idx]:
-                url_items[orig_idx].setdefault("jinaRerankBoost", boost)
+                url_items[orig_idx]["jinaRerankBoost"] = boost
 
-    # 计算每条 boost
-    boosted = []
+    # === 计算各项 boost ===
+    boosted_items = []
     for item in url_items:
         if not item or not item.get("url"):
-            logging.error("Skipping invalid item:", item)
-            boosted.append(item)
+            logging.error(f"Skipping invalid item: {item}")
+            boosted_items.append(item)
             continue
 
         parts = extract_url_parts(item["url"])
@@ -467,39 +574,40 @@ def rank_urls(url_items, options=None, trackers=None):
 
         freq = item.get("weight", 0)
 
-        # hostname boost
+        # Hostname boost
         hostname_freq = normalize_count(hostname_count.get(hostname, 0), total_urls)
         hostname_boost = hostname_freq * hostname_boost_factor
         if hostname in boost_hostnames:
             hostname_boost += 2
 
-        # path boost
+        # Path boost
         path_boost = 0.0
         segments = [s for s in path.split("/") if s]
-        for i, seg in enumerate(segments):
+        for i in range(len(segments)):
             prefix = "/" + "/".join(segments[: i + 1])
-            prefix_cnt = path_prefix_count.get(prefix, 0)
-            prefix_freq = normalize_count(prefix_cnt, total_urls)
-            decayed = prefix_freq * math.pow(decay_factor, i) * path_boost_factor
+            prefix_count = path_prefix_count.get(prefix, 0)
+            prefix_freq = normalize_count(prefix_count, total_urls)
+            decayed = prefix_freq * (decay_factor ** i) * path_boost_factor
             path_boost += decayed
 
-        freq_boost = freq / total_urls * freq_factor if total_urls else 0.0
+        freq_boost = (freq / total_urls * freq_factor) if total_urls else 0.0
         jina_rerank_boost = item.get("jinaRerankBoost", 0.0)
 
         final_score = hostname_boost + path_boost + freq_boost + jina_rerank_boost
         final_score = max(min(final_score, max_boost), min_boost)
 
-        boosted_item = {**item,
-                        "freqBoost": freq_boost,
-                        "hostnameBoost": hostname_boost,
-                        "pathBoost": path_boost,
-                        "jinaRerankBoost": jina_rerank_boost,
-                        "finalScore": final_score}
-        boosted.append(boosted_item)
+        boosted_item = {
+            **item,
+            "freqBoost": freq_boost,
+            "hostnameBoost": hostname_boost,
+            "pathBoost": path_boost,
+            "jinaRerankBoost": jina_rerank_boost,
+            "finalScore": final_score,
+        }
+        boosted_items.append(boosted_item)
 
-    # 按 finalScore 降序
-    boosted.sort(key=lambda x: x["finalScore"], reverse=True)
-    return boosted
+    boosted_items.sort(key=lambda x: x.get("finalScore", 0), reverse=True)
+    return boosted_items
 
 
 def keep_k_per_hostname(results: List[Dict[str, Any]], k: int) -> List[Dict[str, Any]]:
@@ -527,3 +635,160 @@ def keep_k_per_hostname(results: List[Dict[str, Any]], k: int) -> List[Dict[str,
             hostname_map[host] = cnt + 1
 
     return filtered
+
+
+async def process_urls(
+        urls,
+        context,
+        all_knowledge,
+        all_urls,
+        visited_urls,
+        bad_urls,
+        image_objects,
+        question,
+        web_contents,
+        with_images=False
+):
+    if not urls:
+        return {"urlResults": [], "success": False}
+
+    bad_hostnames: List[str] = []
+
+    # ---------- 1. 记录阅读动作 ----------
+    this_step = {
+        "action": "visit",
+        "think": get_i18n_text(
+            "read_for",
+            LANGUAGE_CODE,
+            {"urls": ", ".join(urls)}
+        ),
+        "URLTargets": urls,
+    }
+    context.actionTracker.track_action({"thisStep": this_step})
+
+    # ---------- 2. 并行处理每个 URL ----------
+    async def _process_single(url: str):
+        nonlocal bad_hostnames
+        try:
+            normalized = normalize_url(url)
+            if not normalized:
+                return None
+            url = normalized  # 统一用归一化后的 URL
+
+            response = await read_url(url, True, context.token_tracker, with_images)
+            data = response["data"]
+            guessed_time = await get_last_modified(url)
+            if guessed_time:
+                logging.debug(f"Guessed time for {url}: {guessed_time}")
+
+            if not data.get("url") or not data.get("content"):
+                raise ValueError("No content found")
+
+            # 垃圾内容检测
+            spam_detect_length = 300
+            is_good = len(data["content"]) > spam_detect_length or not await classify_text(
+                data["content"]
+            )
+            if not is_good:
+                logging.warning(
+                    f"Blocked content {len(data['content'])}:",
+                    {"url": url, "content": data["content"][:spam_detect_length]},
+                )
+                raise ValueError(f"Blocked content {url}")
+
+            # 分块存储
+            chunks, chunk_positions = chunk_text(data["content"])
+            web_contents[data["url"]] = {
+                "chunks": chunks,
+                "chunk_positions": chunk_positions,
+                "title": data.get("title"),
+            }
+
+            # 加入知识库
+            answer = await cherry_pick(
+                question, data["content"], {}, context, url
+            )
+            all_knowledge.append(
+                {
+                    "question": f'What do expert say about "{question}"?',
+                    "answer": answer,
+                    "references": [data["url"]],
+                    "type": "url",
+                    "updated": (
+                        format_date_based_on_type(datetime.fromisoformat(guessed_time), "full")
+                        if guessed_time
+                        else None
+                    ),
+                }
+            )
+
+            # 处理页面内链接
+            for link in data.get("links") or []:
+                nn = normalize_url(link[1])
+                if not nn:
+                    continue
+                snippet = {"title": link[0], "url": nn, "description": link[0]}
+                add_to_all_urls(snippet, all_urls, 0.1)
+
+            # 处理图片
+            if with_images and data.get("images"):
+                for alt, img_url in data["images"].items():
+                    img_obj = await process_image(img_url, context.token_tracker)
+                    if img_obj and not any(i["url"] == img_obj["url"] for i in image_objects):
+                        image_objects.append(img_obj)
+
+            return {"url": url, "result": response}
+
+        except Exception as e:
+            logging.error("Error reading URL:", {"url": url, "error": str(e)})
+            bad_urls.append(url)
+
+            # 根据错误信息收集坏 hostname
+            msg = str(e).lower()
+            if any(
+                    k in msg
+                    for k in (
+                            "couldn't resolve host name",
+                            "could not be resolved",
+                            "err_cert_common_name_invalid",
+                            "err_connection_refused",
+                    )
+            ) or (
+                    e.__class__.__name__ in ("ParamValidationError", "AssertionFailureError")
+                    and ("domain" in msg or "resolve host name" in msg)
+            ):
+                hostname = ""
+                try:
+                    hostname = extract_url_parts(url).hostname
+                except Exception as parse_e:
+                    logging.error("Error parsing URL for hostname:", {"url": url, "error": str(parse_e)})
+                if hostname:
+                    bad_hostnames.append(hostname)
+                    logging.debug(f"Added {hostname} to bad hostnames list")
+            return None
+
+        finally:
+            # 无论成败，只要 url 非空就记入已访问
+            if url:
+                visited_urls.append(url)
+                context.action_tracker.track_action(
+                    {
+                        "thisStep": {
+                            "action": "visit",
+                            "think": "",
+                            "URLTargets": [url],
+                        }
+                    }
+                )
+
+    url_results = await asyncio.gather(*[_process_single(u) for u in urls])
+    valid_results = [r for r in url_results if r is not None]
+
+    # ---------- 3. 根据 bad_hostnames 清理 all_urls ----------
+    if bad_hostnames:
+        for u in list(all_urls.keys()):
+            if extract_url_parts(u).hostname in bad_hostnames:
+                del all_urls[u]
+                logging.warning(f"Removed {u} from all_urls because of bad hostname")
+
+    return {"urlResults": valid_results, "success": len(valid_results) > 0}

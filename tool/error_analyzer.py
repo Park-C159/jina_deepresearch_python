@@ -2,11 +2,10 @@ import logging
 
 from sympy.printing.numpy import const
 
-from tool.serp_cluster import TOOL_NAME
 from utils.safe_generator import ObjectGeneratorSafe
 from utils.schemas import ErrorAnalysisSchema
 
-TOOL_NAME = 'error_analyzer'
+TOOL_NAME = "errorAnalyzer"
 
 
 def get_prompt(diary_context):
@@ -81,36 +80,38 @@ The answer is not definitive and fails to provide the requested information.  La
 
 
 <output>
-{
+{{
   "recap": "The search process consisted of 7 steps with multiple search and visit actions. The initial searches focused on basic biographical information through LinkedIn and Crunchbase (steps 1-2). When this didn't yield the specific age information, additional searches were conducted for birthdate information (steps 3-5). The process showed signs of repetition in steps 4-5 with identical searches. Final visits to entertainment websites (step 6) suggested a loss of focus on reliable business sources.",
   
   "blame": "The root cause of failure was getting stuck in a repetitive search pattern without adapting the strategy. Steps 4-5 repeated the same search, and step 6 deviated to less reliable entertainment sources instead of exploring business journals, news articles, or professional databases. Additionally, the process didn't attempt to triangulate age through indirect information like education history or career milestones.",
   
   "improvement": "1. Avoid repeating identical searches and implement a strategy to track previously searched terms. 2. When direct age/birthdate searches fail, try indirect approaches like: searching for earliest career mentions, finding university graduation years, or identifying first company founding dates. 3. Focus on high-quality business sources and avoid entertainment websites for professional information. 4. Consider using industry event appearances or conference presentations where age-related context might be mentioned. 5. If exact age cannot be determined, provide an estimated range based on career timeline and professional achievements.",
-}
+}}
 </output>
 </example>""",
         'user': f"{'\n'.join(diary_context)}"
     }
 
 
-async def analyze_steps(
-        diary_context,
-        trackers
-):
+async def analyze_steps(diary_context, trackers):
     try:
-        generator = ObjectGeneratorSafe(trackers.get("tokenTracker"))
+        generator = ObjectGeneratorSafe(trackers.tokenTracker if trackers else None)
         prompt = get_prompt(diary_context)
 
         result = await generator.generate_object({
-            'model': TOOL_NAME,
-            'schema': ErrorAnalysisSchema,
-            'system': prompt.get('system'),
-            'prompt': prompt.get('user'),
+            "model": TOOL_NAME,
+            "schema": ErrorAnalysisSchema,
+            "system": prompt["system"],
+            "prompt": prompt["user"]
         })
-        logging.info(TOOL_NAME, str({'object', result.get('object')}))
-        trackers.actionTracker.track_think(result.get("object").get("blame"))
-        trackers.actionTracker.track_think(result.get("object").get("improvement"))
-    except Exception as e:
-        logging.error(TOOL_NAME, str(e))
-        pass
+
+        logging.info(TOOL_NAME + str({"object": result["object"]}))
+        if trackers:
+            trackers.actionTracker.track_think(result["object"]["blame"])
+            trackers.actionTracker.track_think(result["object"]["improvement"])
+
+        return result["object"]
+
+    except Exception as error:
+        logging.error(f"Error in {TOOL_NAME}" + str({"error": error}))
+        raise

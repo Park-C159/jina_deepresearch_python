@@ -43,6 +43,7 @@ class EventEmitter:
             if event not in self._events:
                 return self
             wrapped = self._events[event]
+
             # 既匹配 wrapper 也匹配其原 listener
             def _is_match(fn: Callable[..., Any]) -> bool:
                 original = getattr(fn, "__original_listener__", None)
@@ -89,20 +90,26 @@ class EventEmitter:
 @dataclass
 class StepAction:
     def __init__(
-        self,
-        action: str = "answer",
-        answer: str = "",
-        references: List[str] | None = None,
-        think: str = "",
-        URLTargets: List[str] | None = None,
-        searchRequests: List[str] | None = None,
+            self,
+            action: str = "answer",
+            answer: str = "",
+            references: List[str] | None = None,
+            think: str = "",
+            URL_targets: List[str] | None = None,
+            search_requests: List[str] | None = None,
+            question2answer: str | None = None,
+            coding_issue: str | None = None,
+            isFinal: bool = True
     ):
         self.action = action
         self.answer = answer
         self.references = references or []
         self.think = think
-        self.URLTargets = URLTargets or []
-        self.searchRequests = searchRequests or []
+        self.URL_targets = URL_targets or []
+        self.search_requests = search_requests or []
+        self.question2answer = question2answer
+        self.coding_issue = coding_issue
+        self.isFinal = isFinal
 
     def copy(self) -> StepAction:
         return StepAction(
@@ -110,8 +117,11 @@ class StepAction:
             answer=self.answer,
             references=self.references.copy(),
             think=self.think,
-            URLTargets=self.URLTargets.copy(),
-            searchRequests=self.searchRequests.copy(),
+            URL_targets=self.URL_targets.copy(),
+            search_requests=self.search_requests.copy(),
+            question2answer=self.question2answer,
+            coding_issue=self.coding_issue,
+            isFinal=self.isFinal,
         )
 
 
@@ -120,10 +130,10 @@ class ActionState:
     __slots__ = ("thisStep", "gaps", "totalStep")
 
     def __init__(
-        self,
-        thisStep: StepAction | None = None,
-        gaps: List[str] | None = None,
-        totalStep: int = 0,
+            self,
+            thisStep: StepAction | None = None,
+            gaps: List[str] | None = None,
+            totalStep: int = 0,
     ):
         self.thisStep = thisStep or StepAction()
         self.gaps = gaps or []
@@ -154,10 +164,10 @@ class ActionTracker(EventEmitter):
         self.emit("action", self._state.thisStep)
 
     def track_think(
-        self,
-        think: str,
-        lang: str | None = None,
-        params: Dict[str, Any] | None = None,
+            self,
+            think: str,
+            lang: str | None = None,
+            params: Dict[str, Any] | None = None,
     ) -> None:
         if lang is not None:
             think = get_i18n_text(think, lang, params)
@@ -178,6 +188,7 @@ class ActionTracker(EventEmitter):
         """重置为初始状态"""
         self._state = ActionState()
         # 如需通知监听者，可再 emit
+
 
 # ---- 使用示例 ----
 if __name__ == "__main__":

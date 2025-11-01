@@ -15,10 +15,10 @@ JINA_API_KEY = os.getenv("JINA_API_KEY")
 
 
 def trim_symbols(s: str) -> str:
-    # 简化版本，去掉符号、标点（Unicode范围可扩展）
-    import re
-    regex = r'[\p{S}\p{P}\p{Z}\p{C}]'
-    return re.sub(regex, ' ', s)
+    import regex  # ⚠️ 注意这里是 regex，不是 re
+    # 去除符号 (S)、标点 (P)、空白 (Z)、控制字符 (C)
+    regex_pattern = r'[\p{S}\p{P}\p{Z}\p{C}]+'
+    return regex.sub(regex_pattern, ' ', s)
 
 
 def truncate_input_string(input_):

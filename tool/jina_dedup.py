@@ -18,7 +18,7 @@ async def dedup_queries(new_queries, existing_queries, tracker=None):
 
         # 批量获得所有embeddings
         all_queries = new_queries + existing_queries
-        all_embeddings = get_embeddings(all_queries, tracker)
+        all_embeddings = get_embeddings(all_queries, tracker).get("embeddings")
 
         # 如果embedding结果为空（如API异常），直接返回所有新query
         if not all_embeddings or len(all_embeddings) == 0:

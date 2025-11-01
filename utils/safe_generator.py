@@ -118,9 +118,11 @@ def ai_generate_object(
         if system:
             messages.append({"role": "system", "content": system})
         if prompt:
+            # print(prompt)
             messages.append({"role": "user", "content": prompt})
         if not messages:
             raise ValueError("Either `messages` or (`prompt`/`system`) must be provided")
+    # print(messages)
 
     obj, completion = wrapped.chat.completions.create_with_completion(
         model=model_name,
@@ -206,6 +208,7 @@ class ObjectGeneratorSafe:
             return {"object": result.get("object"), "usage": usage}
 
         except Exception as error:
+            # print(error)
             # 第一次兜底：手动解析错误输出
             try:
                 error_result = await self._handle_generate_object_error(error)
