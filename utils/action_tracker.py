@@ -95,7 +95,7 @@ class StepAction:
             answer: str = "",
             references: List[str] | None = None,
             think: str = "",
-            URL_targets: List[str] | None = None,
+            URL_target: List[str] | None = None,
             search_requests: List[str] | None = None,
             question2answer: str | None = None,
             coding_issue: str | None = None,
@@ -105,7 +105,7 @@ class StepAction:
         self.answer = answer
         self.references = references or []
         self.think = think
-        self.URL_targets = URL_targets or []
+        self.URL_target = URL_target or []
         self.search_requests = search_requests or []
         self.question2answer = question2answer
         self.coding_issue = coding_issue
@@ -117,7 +117,7 @@ class StepAction:
             answer=self.answer,
             references=self.references.copy(),
             think=self.think,
-            URL_targets=self.URL_targets.copy(),
+            URL_target=self.URL_target.copy(),
             search_requests=self.search_requests.copy(),
             question2answer=self.question2answer,
             coding_issue=self.coding_issue,
@@ -175,7 +175,7 @@ class ActionTracker(EventEmitter):
         # 更新 think 并清空 URLTargets（与 TS 侧一致）
         new_step = self._state.thisStep.copy()
         new_step.think = think
-        new_step.URLTargets = []
+        new_step.URL_target = []
 
         self._state.thisStep = new_step
         self.emit("action", self._state.thisStep)

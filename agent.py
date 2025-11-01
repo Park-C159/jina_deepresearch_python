@@ -276,7 +276,7 @@ Based on the current context, you must choose one of the following actions:
 
     return {
         "system": remove_extra_line_breaks("\n\n".join(sections)),
-        "url_list": [u.url for u in url_list],
+        "url_list": [u['url'] for u in url_list]
     }
 
 
@@ -705,15 +705,6 @@ async def get_response(
         })
         # evaluation_metrics[current_question] = [{"type": "strict", "numEvalsRequired": max_bad_attempts}]
 
-
-
-
-
-
-
-
-
-
         allow_answer = True
         allow_read = True
         allow_search = True
@@ -739,7 +730,8 @@ async def get_response(
                 "pass_": True,
                 "think": ''
             }
-            if evaluation_metrics.get(current_question) is not None and len(evaluation_metrics.get(current_question)) > 0:
+            if evaluation_metrics.get(current_question) is not None and len(
+                    evaluation_metrics.get(current_question)) > 0:
                 context.actionTracker.track_think('eval_first', language_code)
                 evaluation_types = [e.get("type") for e in evaluation_metrics.get(current_question) if
                                     e.get('numEvalsRequired') > 0]
@@ -979,22 +971,22 @@ You decided to think out of the box or cut from a completely different angle.
                 })
             allow_search = False
             allow_answer = False
-        elif this_step['action'] == 'visit' and this_step.get('URL_targets') and len(url_list) > 0:
+        elif this_step['action'] == 'visit' and this_step.get('URL_target') and len(url_list) > 0:
             print('visit')
-            this_step['URLTargets'] = [
+            this_step['URL_target'] = [
                 normalize_url(url_list[idx - 1])
-                for idx in (this_step.get('URLTargets') or [])  # 等价于 (thisStep.URLTargets as number[])
+                for idx in (this_step.get('URL_target') or [])  # 等价于 (thisStep.URLTargets as number[])
             ]
             step_url_targets = [
-                url for url in this_step['URLTargets']
+                url for url in this_step['URL_target']
                 if url and url not in visited_URLs
             ]
             weighted_urls_list = [r['url'] for r in weighted_urls if r.get('url')]
-            this_step['URLTargets'] = list(dict.fromkeys(step_url_targets + weighted_urls_list))[:MAX_URLS_PER_STEP]
-            unique_URLs = this_step.get("URLTargets")
+            this_step['URL_target'] = list(dict.fromkeys(step_url_targets + weighted_urls_list))[:MAX_URLS_PER_STEP]
+            unique_URLs = this_step.get("URL_target")
             log.debug('Unique URLs: ' + str(unique_URLs))
             if len(unique_URLs) > 0:
-                url_results, success = process_urls(
+                pu = await process_urls(
                     unique_URLs,
                     context,
                     all_knowledge,
@@ -1006,6 +998,32 @@ You decided to think out of the box or cut from a completely different angle.
                     all_web_contents,
                     with_images
                 )
+                url_results, success = pu.get("urlResults"), pu.get("success")
+                diary_context.append(
+                    f"""At step ${step}, you took the **visit** action and deep dive into the following URLs:
+{'\n'.join(r["url"] for r in url_results if r is not None)}
+You found some useful information on the web and add them to your knowledge for future reference.""" if success else f"At step {step}, you took the **visit** action and try to visit some URLs but failed to read the content. You need to think out of the box or cut from a completely different angle."
+                )
+                update_context({
+                    'total_step': total_step,
+                    **({
+                        question: current_question,
+                        **this_step,
+                        result: url_results
+                    } if success else {
+                        **this_step,
+                        result: 'You have tried all possible URLs and found no new information. You must think out of the box or different angle!!!'
+                    })
+                })
+            else:
+                diary_context.append(f"""
+At step {step}, you took the **visit** action. But then you realized you have already visited these URLs and you already know very well about their contents.
+You decided to think out of the box or cut from a completely different angle.""")
+                update_context({
+                    'total_step': total_step,
+                    **this_step,
+                    'result': 'You have visited all possible URLs and found no new information. You must think out of the box or different angle!!!'
+                })
 
             allow_read = False
         elif this_step.get("action") == 'coding' and this_step.get("coding_issue"):

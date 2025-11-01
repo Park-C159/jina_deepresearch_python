@@ -202,8 +202,6 @@ class QuestionEvaluateSchema(BaseModel):
     needsCompleteness: bool
 
 
-
-
 class CodingActionPayload(BaseModel):
     coding_issue: str = Field(
         max_length=500,
