@@ -10,6 +10,7 @@ import asyncio
 from typing import Dict, List, Any
 
 from tool.date_tools import format_date_based_on_type
+from tool.image_tools import process_image
 from tool.jina_classify_spam import classify_text
 from tool.jina_latechunk import cherry_pick
 from tool.jina_rerank import rerank_documents
@@ -662,7 +663,7 @@ async def process_urls(
             LANGUAGE_CODE,
             {"urls": ", ".join(urls)}
         ),
-        "URLTargets": urls,
+        "URL_target": urls,
     }
     context.actionTracker.track_action({"thisStep": this_step})
 
@@ -776,7 +777,7 @@ async def process_urls(
                         "thisStep": {
                             "action": "visit",
                             "think": "",
-                            "URLTargets": [url],
+                            "URL_target": [url],
                         }
                     }
                 )

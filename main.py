@@ -350,6 +350,7 @@ async def main():
         f"  - [idx={idx + 1}] [weight={item["score"]:.2f}] \"{item["url"]}\": \"{item["merged"][:50]}\""
         for idx, item in enumerate(url_list)
     )
+    url_list = [u['url'] for u in url_list]
     return
 
 

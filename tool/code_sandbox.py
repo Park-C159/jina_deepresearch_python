@@ -8,7 +8,7 @@ from utils.schemas import CodeGeneratorSchema
 
 def get_prompt(problem, available_vars, previous_attempts):
     previous_attempts_arr = []
-    for attempt, index in previous_attempts:
+    for index, attempt in enumerate(previous_attempts):
         previous_attempt_str = f"""
 <bad-attempt-${index + 1}>
 {attempt.get('code')}
@@ -17,10 +17,10 @@ def get_prompt(problem, available_vars, previous_attempts):
 """
         previous_attempts_arr.append(previous_attempt_str)
     previous_attempts_context = '\n'.join(previous_attempts_arr)
-    prompt = f"""You are an expert JavaScript programmer. Your task is to generate JavaScript code to solve the given problem.
+    prompt = f"""You are an expert Python programmer. Your task is to generate Python code to solve the given problem.
 
 <rules>
-1. Generate plain JavaScript code that returns the result directly
+1. Generate plain Python code that returns the result directly
 2. You can access any of these available variables directly:
 {available_vars}
 3. You don't have access to any third party libraries that need to be installed, so you must write complete, self-contained code.
@@ -38,7 +38,7 @@ Problem: Sum all numbers above threshold
 
 Response:
 {{
-    "code": "return numbers.filter(n => n > threshold).reduce((a, b) => a + b, 0);"
+    "code": "return sum(n for n in numbers if n > threshold)"
 }}
 </example>"""
     logging.debug('Coding prompt', {prompt})
@@ -66,7 +66,6 @@ class CodeSandbox:
         if previousAttempts is None:
             previousAttempts = []
 
-        # 兼容外部函数命名：getPrompt 必须由外部提供
         prompt = get_prompt(problem, analyzeStructure(self.context), previousAttempts)
 
         schema = self.schemaGen if self.schemaGen else None
@@ -82,7 +81,6 @@ class CodeSandbox:
             'system': prompt.get('system'),
             'prompt': prompt.get('user'),
         })
-
         # 记录思考轨迹（若可用）
         action_tracker = getattr(self.trackers, 'actionTracker', None) if self.trackers else None
         track_think = getattr(action_tracker, 'trackThink', None) or getattr(action_tracker, 'track_think', None)
