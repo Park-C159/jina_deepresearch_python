@@ -20,7 +20,7 @@ async def rerank_documents(
         query: str,
         documents,
         tracker=None,
-        batch_size=2000,
+        batch_size=512,
 ):
     """
     Python 版 Jina rerank 接口封装，批次并发调用。

@@ -493,7 +493,7 @@ def count_url_parts(url_items: list) -> dict:
 
 
 def filter_urls(
-        all_urls: Dict[str, Dict[str, Any]],
+        all_urls: Dict[str, str],
         visited_urls: List[str],
         bad_hostnames: List[str],
         only_hostnames: List[str]
@@ -503,13 +503,15 @@ def filter_urls(
     返回满足条件的 SearchSnippet 列表。
     """
 
-    def extract_hostname(url: str) -> str:
+    def extract_hostname(url_t: str) -> str:
         # 简单提取 hostname，可按需换成 urllib.parse
-        url = url.lstrip("https://").lstrip("http://")
-        return url.split("/")[0] if "/" in url else url
+        url_t = url_t.lstrip("https://").lstrip("http://")
+        return url_t.split("/")[0] if "/" in url_t else url_t
 
     filtered = []
     for url, snippet in all_urls.items():
+        if snippet.strip() == '':
+            continue
         if url in visited_urls:
             continue
         hostname = extract_hostname(url)
