@@ -21,7 +21,6 @@ def trim_symbols(s: str) -> str:
     return regex.sub(regex_pattern, ' ', s)
 
 
-
 def truncate_input_string(input_):
     if isinstance(input_, str):
         return input_[:50]

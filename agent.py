@@ -117,10 +117,10 @@ def compose_msgs(
     return msgs
 
 
-def sort_select_urls(urls: List[BoostedSearchSnippet], top_k: int) -> List[BoostedSearchSnippet]:
-    """按 score 降序选前 top_k 个"""
-    return sorted(urls, key=lambda x: x.score, reverse=True)[:top_k]
-
+# def sort_select_urls(urls, top_k: int) -> List[BoostedSearchSnippet]:
+#     """按 score 降序选前 top_k 个"""
+#     return sorted(urls, key=lambda x: x['score'], reverse=True)[:top_k]
+#
 
 def get_prompt(
         context: Optional[List[str]] = None,
@@ -132,7 +132,7 @@ def get_prompt(
         allow_search: bool = True,
         allow_coding: bool = True,
         knowledge: List[KnowledgeItem] = None,  # List[KnowledgeItem] 若已定义可替换
-        all_urls: Optional[List[BoostedSearchSnippet]] = None,
+        all_urls=None,
         beast_mode: bool = False,
 ) -> Dict[str, Optional[List[str]]]:
     sections: List[str] = []
@@ -159,10 +159,10 @@ You have conducted the following actions:
 
     # 动作片段
     ## url visit
-    url_list = sort_select_urls(all_urls or [], top_k=20)
+    url_list = sort_select_urls(all_urls or [], max_urls=20)
     if allow_read and url_list:
         url_str = "\n".join(
-            f"  - [idx={idx + 1}] [weight={item.score:.2f}] \"{item.url}\": \"{item.merged[:50]}\""
+            f"  - [idx={idx + 1}] [weight={item["score"]:.2f}] \"{item["url"]}\": \"{item["merged"][:50]}\""
             for idx, item in enumerate(url_list)
         )
         action_sections.append(
@@ -559,7 +559,6 @@ async def get_response(
     weighted_urls = []
 
     diary_context = []
-    weight_URLs = []
 
     allow_answer = False
     allow_read = True
@@ -647,8 +646,8 @@ async def get_response(
 
             log.debug("Weighted URLs:" + str({" count": len(weighted_urls)}))
 
-        allow_read = allow_read and len(weight_URLs) > 0
-        allow_search = allow_search and len(weight_URLs) < 50  # disable search when too many urls already
+        allow_read = allow_read and len(weighted_urls) > 0
+        allow_search = allow_search and len(weighted_urls) < 50  # disable search when too many urls already
 
         generate_prompt = get_prompt(
             diary_context,
@@ -660,7 +659,7 @@ async def get_response(
             allow_search,
             allow_coding,
             all_knowledge,
-            weight_URLs,
+            weighted_urls,
             False
         )
         system = generate_prompt.get("system")
@@ -687,14 +686,12 @@ async def get_response(
             "messages": msg_with_knowledge,
             "numRetries": 2
         })
-        action = None
-        for act_key, act in result.get("object").get("action").items():
-            if act is not None:
-                action = act_key
+        obj = result.get("object", {}) if isinstance(result, dict) else {}
+        action = obj.get("action")
         this_step = {
             "action": action,
-            "think": result.get("object").get("think"),
-            **result.get("object").get("action").get(action)
+            "think": obj.get("think"),
+            **obj.get(action)
         }
         actions = [allow_search, allow_read, allow_answer, allow_reflect, allow_coding]
         action_names = ['search', 'read', 'answer', 'reflect', 'coding']
@@ -706,7 +703,17 @@ async def get_response(
             "thisStep": this_step,
             "gaps": gaps,
         })
-        evaluation_metrics[current_question] = [{"type": "strict", "numEvalsRequired": max_bad_attempts}]
+        # evaluation_metrics[current_question] = [{"type": "strict", "numEvalsRequired": max_bad_attempts}]
+
+
+
+
+
+
+
+
+
+
         allow_answer = True
         allow_read = True
         allow_search = True
@@ -729,14 +736,22 @@ async def get_response(
             }))
 
             evaluation = {
-                "pass": True,
+                "pass_": True,
                 "think": ''
             }
-            if evaluation_metrics.get(current_question) is not None and len(
-                    evaluation_metrics.get(current_question)) > 0:
+            if evaluation_metrics.get(current_question) is not None and len(evaluation_metrics.get(current_question)) > 0:
                 context.actionTracker.track_think('eval_first', language_code)
                 evaluation_types = [e.get("type") for e in evaluation_metrics.get(current_question) if
                                     e.get('numEvalsRequired') > 0]
+                # print("evaluation_types: ", evaluation_types)
+                # print("current_question: ", current_question)
+                # print("this_step: ", this_step)
+                # print("evaluation_types: ", evaluation_types)
+                # print("context: ", context)
+                # print("all_knowledge: ", all_knowledge)
+                # print("evaluation_metrics: ", evaluation_metrics)
+                # print("final_answer_PIP: ", final_answer_PIP)
+
                 evaluation = await evaluation_answer(
                     current_question,
                     this_step,
@@ -747,7 +762,7 @@ async def get_response(
             if current_question.strip() == question.strip():
                 allow_coding = False
 
-                if evaluation.get("pass"):
+                if evaluation.get("pass_"):
                     diary_context.append(f"""
 At step {step}, you took **answer** action and finally found the answer to the original question:
 
@@ -755,10 +770,10 @@ Original question:
 {current_question}
 
 Your answer: 
-${this_step['answer']}
+{this_step['answer']}
 
 The evaluator thinks your answer is good because: 
-${evaluation['think']}
+{evaluation['think']}
 
 Your journey ends here. You have successfully answered the original question. Congratulations! 🎉
 """)
@@ -778,45 +793,44 @@ Your journey ends here. You have successfully answered the original question. Co
                         this_step["isFinal"] = False
                         break
                     diary_context.append(f"""
-At step ${step}, you took **answer** action but evaluator thinks it is not a good answer:
+At step {step}, you took **answer** action but evaluator thinks it is not a good answer:
 
 Original question: 
-${current_question}
+{current_question}
 
 Your answer: 
-${this_step.get("answer")}
+{this_step.get("answer")}
 
 The evaluator thinks your answer is bad because: 
-${evaluation.get("think")}
+{evaluation.get("think")}
 """)
                     error_analysis = await analyze_steps(diary_context, context)
-                    all_knowledge.append({
-                        'question': f"""Why is the following answer bad for the question? Please reflect
+                    all_knowledge.append(KnowledgeItem(
+                        question=f"""Why is the following answer bad for the question? Please reflect
 
 <question>
 {current_question}
 </question>
 
 <answer>
-${this_step.get("answer")}
+{this_step.get("answer")}
 </answer>
-`,
-            answer: `
-${evaluation.get('think')}
-
-${error_analysis.get('recap')}
-
-${error_analysis.get('blame')}
-
-${error_analysis.get('improvement')}
 """,
-                        'type': 'qa'
-                    })
+                        answer=f"""
+{evaluation.get('think')}
+
+{error_analysis.get('recap')}
+
+{error_analysis.get('blame')}
+
+{error_analysis.get('improvement')}
+""",
+                        type='qa'))
                     allow_answer = False
                     diary_context = []
                     step = 0
-            elif evaluation.get("pass"):
-                diary_context.append(f"""At step ${step}, you took **answer** action. You found a good answer to the sub-question:
+            elif evaluation.get("pass_"):
+                diary_context.append(f"""At step {step}, you took **answer** action. You found a good answer to the sub-question:
 
 Sub-question: 
 {current_question}
@@ -828,12 +842,12 @@ The evaluator thinks your answer is good because:
 {evaluation.get('think')}
 
 Although you solved a sub-question, you still need to find the answer to the original question. You need to keep going.""")
-                all_knowledge.append({
-                    'question': current_question,
-                    'answer': this_step["answer"],
-                    'type': 'qa',
-                    'updated': format_date_based_on_type(datetime.now(), 'full')
-                })
+                all_knowledge.append(KnowledgeItem(
+                    question=current_question,
+                    answer=this_step["answer"],
+                    type='qa',
+                    updated=format_date_based_on_type(datetime.now(), 'full')
+                ))
                 if current_question in gaps:
                     gaps.remove(current_question)
         elif this_step['action'] == 'reflect' and this_step.get('question2answer'):
@@ -941,7 +955,7 @@ Although you solved a sub-question, you still need to find the answer to the ori
                     all_knowledge.extend(new_knowledge)
                     diary_context.append(f"""
 At step {step}, you took the **search** action and look for external information for the question: "{current_question}".
-In particular, you tried to search for the following keywords: "${", ".join(str(item["q"]) for item in keywords_queries)}".
+In particular, you tried to search for the following keywords: "{", ".join(str(item["q"]) for item in keywords_queries)}".
 You found quite some information and add them to your URL list and **visit** them later when needed. 
 """)
                     update_context({
@@ -999,7 +1013,7 @@ You decided to think out of the box or cut from a completely different angle.
             sandbox = CodeSandbox(
                 {
                     "allContext": all_context,
-                    "URLs": weight_URLs[:20],
+                    "URLs": weighted_urls[:20],
                     "allKnowledge": all_knowledge,
                 },
                 context,
@@ -1078,34 +1092,32 @@ But unfortunately, you failed to solve the issue. You need to think out of the b
             False,
             False,
             all_knowledge,
-            weight_URLs,
+            weighted_urls,
             True,
         )["system"]
-        schema = build_agent_action_payload(False, False, True, False, False, question)
+        schema = build_agent_action_payload(False, False, False, True, False, question)
         msg_with_knowledge = compose_msgs(messages, all_knowledge, question, final_answer_PIP)
 
         result = await generator.generate_object({
-            {
-                "model": "agentBeastMode",
-                "schema": schema,
-                "system": system,
-                "messages": msg_with_knowledge,
-                "numRetries": 2,
-            }
+            "model": "agentBeastMode",
+            "schema": schema,
+            "system": system,
+            "messages": msg_with_knowledge,
+            "numRetries": 2,
         })
         obj = result.get("object", {}) if isinstance(result, dict) else {}
-        thisStep = {
+        this_step = {
             "action": obj.get("action"),
             "think": obj.get("think"),
-            **(obj.get(obj.get("action"), {}) if isinstance(obj.get(obj.get("action")), dict) else {}),
+            **obj.get(obj.get("action"), {}),
         }
         # thisStep 视为 AnswerAction
-        thisStep["isFinal"] = True
+        this_step["isFinal"] = True
 
         # 跟踪动作
-        context.actionTracker.trackAction({
+        context.actionTracker.track_action({
             "totalStep": total_step,
-            "thisStep": thisStep,
+            "thisStep": this_step,
             "gaps": gaps
         })
 
@@ -1133,6 +1145,7 @@ But unfortunately, you failed to solve the issue. You need to think out of the b
 
         answer_step["answer"] = repair_markdown_final(repaired_answer)
 
+        print("all_web_contents: ", all_web_contents)
         # 生成引用
         result = await build_references(
             answer_step["answer"],
@@ -1196,7 +1209,7 @@ But unfortunately, you failed to solve the issue. You need to think out of the b
             # 限制最多 10 张图像
             answer_step["imageReferences"] = filtered[:10]
 
-    returned_urls = [r["url"] for r in weight_URLs[:num_returned_urls] if r and r.get("url")]
+    returned_urls = [r["url"] for r in weighted_urls[:num_returned_urls] if r and r.get("url")]
     return {
         "result": this_step,
         "context": context,
@@ -1321,7 +1334,7 @@ async def main():
         boost_hostnames=["openai.com"],
         bad_hostnames=["facebook.com"],
         only_hostnames=None,
-        max_ref=5,
+        max_ref=50,
         min_rel_score=0.7,
         team_size=1
     )

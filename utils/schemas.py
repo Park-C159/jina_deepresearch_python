@@ -309,20 +309,13 @@ Required when action='reflect'. Reflection and planning, generate a list of most
 
     AgentActionDynamic = create_model(
         "AgentActionDynamic",
-        __base__=BaseModel,
+        __base__=ActionModel,
         think=think_field,
-        action_list=(
-            Literal[tuple(enabled_actions)],
-            Field(
-                ...,
-                description=f"Choose exactly one best action from {enabled_actions}."
-            )
-        ),
         action=(
-            ActionModel,
+            str,
             Field(
                 ...,
-                description=f"Choose exactly one best action from the available actions, "
+                description=f"Choose exactly one best action from the available actions: {enabled_actions}, "
                             f"fill in the corresponding action schema required. Keep the reasons in mind: "
                             f"(1) What specific information is still needed? "
                             f"(2) Why is this action most likely to provide that information? "
@@ -331,6 +324,7 @@ Required when action='reflect'. Reflection and planning, generate a list of most
             ),
         ),
     )
+    AgentActionDynamic.__action_schemas__ = action_schemas
     return AgentActionDynamic
 
 

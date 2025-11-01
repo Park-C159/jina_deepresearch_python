@@ -88,6 +88,7 @@ def build_agent_action_model(
                 )
             )
 
+        enabled_actions.append("search")
         action_fields["search"] = (Optional[SearchActionPayload], None)
 
         # annotation["action"] = (Optional[SearchActionPayload], None)
@@ -104,6 +105,7 @@ def build_agent_action_model(
             )
             coding_issue: constr(max_length=500)
 
+        enabled_actions.append("coding")
         action_fields["coding"] = (Optional[CodingActionPayload], None)
         # annotation["coding"] = (Optional[CodingActionPayload], None)
         # enabled_actions.append("coding")
@@ -117,19 +119,24 @@ def build_agent_action_model(
     )
     AgentActionDynamic = create_model(
         "AgentActionDynamic",
-        __base__=BaseModel,
+        __base__=ActionModel,
         think=think_field,
         action=(
-            ActionModel,
+            str,
             Field(
                 ...,
-                description="There are lots of actions below, I need u to choose nothing. search output None."
+                description=f"Choose exactly one best action from the available actions: {enabled_actions}, "
+                            f"fill in the corresponding action schema required. Keep the reasons in mind: "
+                            f"(1) What specific information is still needed? "
+                            f"(2) Why is this action most likely to provide that information? "
+                            f"(3) What alternatives did you consider and why were they rejected? "
+                            f"(4) How will this action advance toward the complete answer?"
             ),
         ),
     )
 
     # 5. 把动作 schema 挂到类上，方便外部取用
-    # AgentActionDynamic.__action_schemas__ = action_schemas
+    AgentActionDynamic.__action_schemas__ = action_schemas
     return AgentActionDynamic
 
 

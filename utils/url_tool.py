@@ -311,6 +311,33 @@ def smart_merge_strings(str1: str, str2: str) -> str:
         return str1 + str2
 
 
+def sort_select_urls(all_urls, max_urls=70):
+    """
+    等价于 TypeScript 的 sortSelectURLs。
+    根据 finalScore 降序排序，并返回前 max_urls 个结果。
+    """
+    if not all_urls:
+        return []
+
+    merged_items = []
+    for r in all_urls:
+        merged = smart_merge_strings(r.get("title"), r.get("description"))
+        merged_items.append({
+            "url": r.get("url"),
+            "score": r.get("finalScore", 0),
+            "merged": merged
+        })
+
+    # 过滤掉空 merged 的项
+    filtered = [item for item in merged_items if item["merged"]]
+
+    # 按 score 降序排序
+    sorted_items = sorted(filtered, key=lambda x: x.get("score", 0), reverse=True)
+
+    # 取前 max_urls 个
+    return sorted_items[:max_urls]
+
+
 def add_to_all_urls(r, all_urls, weight_delta=1):
     """
     r: SearchSnippet对象（dict或自定义类）

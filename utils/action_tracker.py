@@ -99,6 +99,7 @@ class StepAction:
             search_requests: List[str] | None = None,
             question2answer: str | None = None,
             coding_issue: str | None = None,
+            isFinal: bool = True
     ):
         self.action = action
         self.answer = answer
@@ -108,6 +109,7 @@ class StepAction:
         self.search_requests = search_requests or []
         self.question2answer = question2answer
         self.coding_issue = coding_issue
+        self.isFinal = isFinal
 
     def copy(self) -> StepAction:
         return StepAction(
@@ -119,6 +121,7 @@ class StepAction:
             search_requests=self.search_requests.copy(),
             question2answer=self.question2answer,
             coding_issue=self.coding_issue,
+            isFinal=self.isFinal,
         )
 
 

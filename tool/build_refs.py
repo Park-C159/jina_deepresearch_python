@@ -6,15 +6,9 @@ from tool.cosin import cosine_similarity, jaccard_rank
 from tool.embedding import get_embeddings
 from tool.image_tools import dedup_images_with_embeddings
 from tool.segments import chunk_text
+from utils import get_log
 from utils.schemas import LANGUAGE_CODE
 from utils.url_tool import normalize_host_name
-
-
-# === 日志辅助 ===
-def log_debug(*args, **kwargs): print("[DEBUG]", *args, kwargs)
-
-
-def log_error(*args, **kwargs): print("[ERROR]", *args, kwargs)
 
 
 # === buildReferences 主函数 ===
@@ -27,19 +21,20 @@ async def build_references(
         min_rel_score=0.7,
         only_hostnames=[]
 ):
-    log_debug(
+    log = get_log.get_logger("build_references")
+    log.debug(
         f"[buildReferences] Starting with maxRef={max_ref}, minChunkLength={min_chunk_length}, minRelScore={min_rel_score}")
-    log_debug(f"[buildReferences] Answer length: {len(answer)} chars, Web content sources: {len(web_contents)}")
+    log.debug(f"[buildReferences] Answer length: {len(answer)} chars, Web content sources: {len(web_contents)}")
 
     # Step 1
-    log_debug("[buildReferences] Step 1: Chunking answer text")
+    log.debug("[buildReferences] Step 1: Chunking answer text")
     result = chunk_text(answer)
     answer_chunks = result["chunks"]
     answer_positions = result["chunk_positions"]
-    log_debug(f"[buildReferences] Answer segmented into {len(answer_chunks)} chunks")
+    log.debug(f"[buildReferences] Answer segmented into {len(answer_chunks)} chunks")
 
     # Step 2
-    log_debug(
+    log.debug(
         f"[buildReferences] Step 2: Preparing web content chunks and filtering by minimum length ({min_chunk_length})")
     all_web_chunks = []
     chunk_to_source = {}
@@ -55,14 +50,14 @@ async def build_references(
             if len(chunk) >= min_chunk_length:
                 valid_web_indices.add(idx)
             idx += 1
-    log_debug(
+    log.debug(
         f"[buildReferences] Collected {len(all_web_chunks)} web chunks, {len(valid_web_indices)} above minimum length")
 
     if not all_web_chunks:
         return {"answer": answer, "references": []}
 
     # Step 3
-    log_debug("[buildReferences] Step 3: Filtering answer chunks by minimum length")
+    log.debug("[buildReferences] Step 3: Filtering answer chunks by minimum length")
 
     context.actionTracker.track_think('cross_reference', LANGUAGE_CODE)
 
@@ -78,14 +73,14 @@ async def build_references(
         valid_answer_indices.append(i)
         valid_positions.append(pos)
 
-    log_debug(
+    log.debug(
         f"[buildReferences] Found {len(valid_answer_chunks)}/{len(answer_chunks)} valid answer chunks above minimum length")
 
     if not valid_answer_chunks:
         return {"answer": answer, "references": []}
 
     # Step 4
-    log_debug("[buildReferences] Step 4: Getting embeddings for all chunks in a single request")
+    log.debug("[buildReferences] Step 4: Getting embeddings for all chunks in a single request")
     all_chunks = []
     index_map = {}
     for i, c in enumerate(valid_answer_chunks):
@@ -96,7 +91,7 @@ async def build_references(
             all_chunks.append(c)
             index_map[len(all_chunks) - 1] = {"type": "web", "idx": i}
 
-    log_debug(f"[buildReferences] Requesting embeddings for {len(all_chunks)} total chunks")
+    log.debug(f"[buildReferences] Requesting embeddings for {len(all_chunks)} total chunks")
     try:
         res = get_embeddings(all_chunks)
         all_emb = res["embeddings"]
@@ -110,10 +105,10 @@ async def build_references(
             else:
                 web_emb_map[mapping["idx"]] = emb
 
-        log_debug(f"[buildReferences] Got embeddings: {len(answer_emb)} answer, {len(web_emb_map)} web")
+        log.debug(f"[buildReferences] Got embeddings: {len(answer_emb)} answer, {len(web_emb_map)} web")
 
         # Step 5
-        log_debug("[buildReferences] Step 5: Computing cosine similarity")
+        log.debug("[buildReferences] Step 5: Computing cosine similarity")
         all_matches = []
         for i, chunk in enumerate(valid_answer_chunks):
             a_idx = valid_answer_indices[i]
@@ -131,7 +126,7 @@ async def build_references(
                     "answerChunkPosition": a_pos
                 })
         all_matches.sort(key=lambda x: x["relevanceScore"], reverse=True)
-        log_debug(f"[buildReferences] Step 6: Sorted {len(all_matches)} matches")
+        log.debug(f"[buildReferences] Step 6: Sorted {len(all_matches)} matches")
 
         used_web = set()
         used_ans = set()
@@ -146,12 +141,12 @@ async def build_references(
             used_ans.add(m["answerChunkIndex"])
             if len(filtered) >= max_ref:
                 break
-        log_debug(f"[buildReferences] Selected {len(filtered)} matches after filtering")
+        log.debug(f"[buildReferences] Selected {len(filtered)} matches after filtering")
 
         return build_final_result(answer, filtered, chunk_to_source)
 
     except Exception as e:
-        log_error("Embedding failed, falling back to Jaccard similarity", e)
+        log.error("Embedding failed, falling back to Jaccard similarity" + str(e))
         all_matches = []
         for i, chunk in enumerate(valid_answer_chunks):
             a_idx = valid_answer_indices[i]
@@ -180,12 +175,14 @@ async def build_references(
             used_ans.add(m["answerChunkIndex"])
             if len(filtered) >= max_ref:
                 break
-        log_debug(f"[buildReferences] Selected {len(filtered)} fallback references")
+        log.debug(f"[buildReferences] Selected {len(filtered)} fallback references")
         return build_final_result(answer, filtered, chunk_to_source)
 
 
 def build_final_result(answer, filtered_matches, chunk_to_source):
-    log_debug(f"[buildFinalResult] Building final result with {len(filtered_matches)} references")
+    log = get_log.get_logger("build_final_result")
+
+    log.debug(f"[buildFinalResult] Building final result with {len(filtered_matches)} references")
     references = []
     for m in filtered_matches:
         s = chunk_to_source[m["webChunkIndex"]]
@@ -209,7 +206,7 @@ def build_final_result(answer, filtered_matches, chunk_to_source):
         modified = modified[:pos] + marker + modified[pos:]
         offset += len(marker)
 
-    log_debug(f"[buildFinalResult] Complete. Generated {len(references)} references")
+    log.debug(f"[buildFinalResult] Complete. Generated {len(references)} references")
     return {"answer": modified, "references": references}
 
 
@@ -222,20 +219,22 @@ async def build_image_references(
         max_ref=10,
         min_rel_score=0.35
 ):
-    log_debug(f"[buildImageReferences] Starting with maxRef={max_ref}, "
+    log = get_log.get_logger("build_image_references")
+
+    log.debug(f"[buildImageReferences] Starting with maxRef={max_ref}, "
               f"minChunkLength={min_chunk_length}, minRelScore={min_rel_score}")
-    log_debug(f"[buildImageReferences] Answer length: {len(answer)} chars, "
+    log.debug(f"[buildImageReferences] Answer length: {len(answer)} chars, "
               f"Image sources: {len(image_objects)}")
 
     # Step 1: Chunk answer
-    log_debug("[buildImageReferences] Step 1: Chunking answer text")
+    log.debug("[buildImageReferences] Step 1: Chunking answer text")
     chunk_result = chunk_text(answer)
     answer_chunks = chunk_result["chunks"]
     answer_chunk_positions = chunk_result["chunk_positions"]
-    log_debug(f"[buildImageReferences] Answer segmented into {len(answer_chunks)} chunks")
+    log.debug(f"[buildImageReferences] Answer segmented into {len(answer_chunks)} chunks")
 
     # Step 2: Prepare image content
-    log_debug("[buildImageReferences] Step 2: Preparing image content")
+    log.debug("[buildImageReferences] Step 2: Preparing image content")
     dedup_images = dedup_images_with_embeddings(image_objects, [])
     all_image_embeddings = [img["embedding"][0] for img in dedup_images]
     image_to_source_map = {}
@@ -249,14 +248,14 @@ async def build_image_references(
         }
         valid_image_indices.add(idx)
 
-    log_debug(f"[buildImageReferences] Collected {len(all_image_embeddings)} image embeddings")
+    log.debug(f"[buildImageReferences] Collected {len(all_image_embeddings)} image embeddings")
 
     if not all_image_embeddings:
-        log_debug("[buildImageReferences] No image data available, returning empty array")
+        log.debug("[buildImageReferences] No image data available, returning empty array")
         return []
 
     # Step 3: Filter answer chunks
-    log_debug("[buildImageReferences] Step 3: Filtering answer chunks by minimum length")
+    log.debug("[buildImageReferences] Step 3: Filtering answer chunks by minimum length")
     valid_answer_chunks = []
     valid_answer_chunk_indices = []
     valid_answer_chunk_positions = []
@@ -271,15 +270,15 @@ async def build_image_references(
         valid_answer_chunk_indices.append(i)
         valid_answer_chunk_positions.append(position)
 
-    log_debug(f"[buildImageReferences] Found {len(valid_answer_chunks)}/{len(answer_chunks)} "
+    log.debug(f"[buildImageReferences] Found {len(valid_answer_chunks)}/{len(answer_chunks)} "
               f"valid answer chunks above minimum length")
 
     if not valid_answer_chunks:
-        log_debug("[buildImageReferences] No valid answer chunks, returning empty array")
+        log.debug("[buildImageReferences] No valid answer chunks, returning empty array")
         return []
 
     # Step 4: Get embeddings
-    log_debug("[buildImageReferences] Step 4: Getting embeddings for answer chunks")
+    log.debug("[buildImageReferences] Step 4: Getting embeddings for answer chunks")
     answer_embeddings = []
 
     try:
@@ -289,10 +288,10 @@ async def build_image_references(
             {"dimensions": 512, "model": "jina-clip-v2"}
         )
         answer_embeddings.extend(embeddings_result["embeddings"])
-        log_debug(f"[buildImageReferences] Got embeddings for {len(answer_embeddings)} answer chunks")
+        log.debug(f"[buildImageReferences] Got embeddings for {len(answer_embeddings)} answer chunks")
 
         # Step 5: Compute cosine similarity
-        log_debug(
+        log.debug(
             "[buildImageReferences] Step 5: Computing pairwise cosine similarity between answer and image embeddings")
         all_matches = []
 
@@ -322,7 +321,7 @@ async def build_image_references(
                 })
 
             top_score = matches_for_chunk[0]["relevanceScore"] if matches_for_chunk else 0
-            log_debug(f"[buildImageReferences] Processed answer chunk {i + 1}/{len(valid_answer_chunks)}, "
+            log.debug(f"[buildImageReferences] Processed answer chunk {i + 1}/{len(valid_answer_chunks)}, "
                       f"top score: {top_score:.4f}")
 
         # 统计分析
@@ -334,14 +333,14 @@ async def build_image_references(
                 "mean": f"{sum(scores) / len(scores):.4f}",
                 "count": len(scores)
             }
-            log_debug("Reference relevance statistics:", stats)
+            log.debug("Reference relevance statistics:", stats)
 
         # Step 6: Sort by relevance
         all_matches.sort(key=lambda x: x["relevanceScore"], reverse=True)
-        log_debug(f"[buildImageReferences] Step 6: Sorted {len(all_matches)} potential matches")
+        log.debug(f"[buildImageReferences] Step 6: Sorted {len(all_matches)} potential matches")
 
         # Step 7: Filter matches
-        log_debug(f"[buildImageReferences] Step 7: Filtering matches (min: {min_rel_score})")
+        log.debug(f"[buildImageReferences] Step 7: Filtering matches (min: {min_rel_score})")
         used_images = set()
         used_answer_chunks = set()
         filtered_matches = []
@@ -356,7 +355,7 @@ async def build_image_references(
                 if len(filtered_matches) >= max_ref:
                     break
 
-        log_debug(
+        log.debug(
             f"[buildImageReferences] Selected {len(filtered_matches)}/{len(all_matches)} references after filtering")
 
         references = []
@@ -373,5 +372,5 @@ async def build_image_references(
         return references
 
     except Exception as error:
-        log_error("Embedding failed", {"error": error})
+        log.error("Embedding failed" + str({"error": error}))
         return []

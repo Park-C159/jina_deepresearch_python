@@ -568,7 +568,7 @@ async def perform_evaluation(
         "schema": get_evaluator_schema(evaluation_type),
     })
     trackers.actionTracker.track_think(result.get("object").get("think"))
-    logging.info(f"{evaluation_type} {TOOL_NAME}", result.get("object"))
+    logging.info(f"{evaluation_type} {TOOL_NAME}" + str(result.get("object")))
 
     return result
 
@@ -636,6 +636,7 @@ Could you please evaluate it based on your knowledge and strict standards? Let m
 
 async def evaluation_answer(question, action, evaluation_types, trackers, all_knowledge):
     log = get_logger("evaluation_answer")
+    result = {}
 
     for evaluation_type in evaluation_types:
         prompt = ''

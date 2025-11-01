@@ -52,7 +52,7 @@ Response:
 class CodeSandbox:
     def __init__(self, context=None, trackers=None,  maxAttempts=3):
         self.trackers = trackers
-        token_tracker = getattr(trackers, 'tokenTracker', None) if trackers else None
+        token_tracker = trackers.tokenTracker if trackers else None
 
         # 兼容外部依赖命名：ObjectGeneratorSafe 必须由外部提供
         # 若不存在，会在实际调用时抛错（保持与原始代码一致的依赖要求）

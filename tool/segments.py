@@ -70,5 +70,3 @@ def chunk_text(
 
     return {"chunks": filtered_chunks, "chunk_positions": filtered_positions}
 
-
-# ------------------ 示例 ------------------
