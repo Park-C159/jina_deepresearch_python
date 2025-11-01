@@ -563,6 +563,8 @@ async def rank_urls(url_items: list, options: dict = None, trackers=None) -> lis
         logging.debug(f"unique URLs: {len(url_items)} -> {len(unique_contents)}")
 
         token_tracker = getattr(trackers, "tokenTracker", None) if trackers else None
+        # print("question:", question)
+        # print("unique_contents:", unique_contents)
         rerank_result = await rerank_documents(question, unique_contents, token_tracker)
         for res in rerank_result.get("results", []):
             idx = res["index"]
