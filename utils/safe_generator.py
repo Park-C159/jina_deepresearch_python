@@ -86,7 +86,7 @@ class GenerateOptions(TypedDict, total=False):
 def ai_generate_object(
         *,
         model,  # 对应 TS 的 model = get_model(model)
-        schema,
+        schema=None,
         prompt=None,
         system=None,
         messages=None,
@@ -102,6 +102,8 @@ def ai_generate_object(
     # 映射表，按需扩展
 
     client, compatibility, model_name = get_model(model)
+
+
     _MODE_MAP = {
         "tools": Mode.TOOLS,  # function calling
         "json": Mode.JSON,  # JSON 模式
@@ -122,16 +124,24 @@ def ai_generate_object(
             messages.append({"role": "user", "content": prompt})
         if not messages:
             raise ValueError("Either `messages` or (`prompt`/`system`) must be provided")
-    # print(messages)
 
-    obj, completion = wrapped.chat.completions.create_with_completion(
-        model=model_name,
-        response_model=schema,
-        messages=messages,
-        max_tokens=maxTokens,
-        temperature=temperature,
-    )
-    object_dict = obj.model_dump() if isinstance(obj, BaseModel) else obj
+    if schema is None:
+        completion = client.chat.completions.create(
+            model=model_name,
+            messages=messages,
+            max_tokens=maxTokens,
+            temperature=temperature,
+        )
+        object_dict = completion.choices[0].message.content
+    else:
+        obj, completion = wrapped.chat.completions.create_with_completion(
+            model=model_name,
+            response_model=schema,
+            messages=messages,
+            max_tokens=maxTokens,
+            temperature=temperature,
+        )
+        object_dict = obj.model_dump() if isinstance(obj, BaseModel) else obj
     usage = getattr(completion, "usage", None)
     input_tokens = getattr(usage, "prompt_tokens", None) if usage else None
     output_tokens = getattr(usage, "completion_tokens", None) if usage else None

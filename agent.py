@@ -624,7 +624,6 @@ async def get_response(
             allow_reflect = False
 
         # 尚未测试，重排序+每个hostname保留top-2个
-        print(visited_URLs, bad_hostnames, current_question, boost_hostnames)
         if all_URLs and len(all_URLs) > 0:
             filtered = filter_urls(
                 all_URLs,
@@ -735,14 +734,6 @@ async def get_response(
                 context.actionTracker.track_think('eval_first', language_code)
                 evaluation_types = [e.get("type") for e in evaluation_metrics.get(current_question) if
                                     e.get('numEvalsRequired') > 0]
-                # print("evaluation_types: ", evaluation_types)
-                # print("current_question: ", current_question)
-                # print("this_step: ", this_step)
-                # print("evaluation_types: ", evaluation_types)
-                # print("context: ", context)
-                # print("all_knowledge: ", all_knowledge)
-                # print("evaluation_metrics: ", evaluation_metrics)
-                # print("final_answer_PIP: ", final_answer_PIP)
 
                 evaluation = await evaluation_answer(
                     current_question,
@@ -1000,21 +991,24 @@ You decided to think out of the box or cut from a completely different angle.
                 )
                 url_results, success = pu.get("urlResults"), pu.get("success")
                 diary_context.append(
-                    f"""At step ${step}, you took the **visit** action and deep dive into the following URLs:
+                    f"""At step {step}, you took the **visit** action and deep dive into the following URLs:
 {'\n'.join(r["url"] for r in url_results if r is not None)}
 You found some useful information on the web and add them to your knowledge for future reference.""" if success else f"At step {step}, you took the **visit** action and try to visit some URLs but failed to read the content. You need to think out of the box or cut from a completely different angle."
                 )
-                update_context({
-                    'total_step': total_step,
-                    **({
-                        question: current_question,
+                if success:
+                    update_context({
+                        'total_step': total_step,
+                        'question': current_question,
                         **this_step,
-                        result: url_results
-                    } if success else {
-                        **this_step,
-                        result: 'You have tried all possible URLs and found no new information. You must think out of the box or different angle!!!'
+                        'result': url_results
                     })
-                })
+                else:
+                    update_context({
+                        'total_step': total_step,
+                        **this_step,
+                        'result': 'You have tried all possible URLs and found no new information. You must think out of the box or different angle!!!'
+                    })
+
             else:
                 diary_context.append(f"""
 At step {step}, you took the **visit** action. But then you realized you have already visited these URLs and you already know very well about their contents.
@@ -1163,7 +1157,6 @@ But unfortunately, you failed to solve the issue. You need to think out of the b
 
         answer_step["answer"] = repair_markdown_final(repaired_answer)
 
-        print("all_web_contents: ", all_web_contents)
         # 生成引用
         result = await build_references(
             answer_step["answer"],
@@ -1272,10 +1265,21 @@ def safe_json(obj):
     if not obj and obj != 0:  # 排除数值 0
         return "null"
     try:
-        return json.dumps(obj, indent=2, ensure_ascii=False)
+        return json.dumps(obj, indent=2, ensure_ascii=False, default=_json_default)
     except Exception as e:
         logging.warning(f"Failed to serialize object: {e}")
         return "null"
+
+
+def _json_default(o):
+    """处理自定义对象的 JSON 转换"""
+    if hasattr(o, "dict"):  # 支持 pydantic 模型
+        return o.dict()
+    if hasattr(o, "__dict__"):  # 普通类实例
+        return o.__dict__
+    if hasattr(o, "__slots__"):  # 使用 __slots__ 的类
+        return {k: getattr(o, k) for k in o.__slots__}
+    return str(o)
 
 
 async def store_context(prompt, schema, memory, step):
@@ -1356,6 +1360,8 @@ async def main():
         min_rel_score=0.7,
         team_size=1
     )
+    with open("result_output.txt", "a", encoding="utf-8") as f:
+        f.write(json.dumps(result, ensure_ascii=False) + "\n\n")
 
     pprint(result["result"])
 

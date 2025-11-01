@@ -676,8 +676,9 @@ async def process_urls(
                 return None
             url = normalized  # 统一用归一化后的 URL
 
-            response = await read_url(url, True, context.token_tracker, with_images)
-            data = response["data"]
+            response = await read_url(url, True, context.tokenTracker, with_images)
+
+            data = response["response"]["data"]
             guessed_time = await get_last_modified(url)
             if guessed_time:
                 logging.debug(f"Guessed time for {url}: {guessed_time}")
@@ -690,6 +691,7 @@ async def process_urls(
             is_good = len(data["content"]) > spam_detect_length or not await classify_text(
                 data["content"]
             )
+
             if not is_good:
                 logging.warning(
                     f"Blocked content {len(data['content'])}:",
@@ -734,14 +736,14 @@ async def process_urls(
             # 处理图片
             if with_images and data.get("images"):
                 for alt, img_url in data["images"].items():
-                    img_obj = await process_image(img_url, context.token_tracker)
+                    img_obj = await process_image(img_url, context.tokenTracker)
                     if img_obj and not any(i["url"] == img_obj["url"] for i in image_objects):
                         image_objects.append(img_obj)
 
             return {"url": url, "result": response}
 
         except Exception as e:
-            logging.error("Error reading URL:", {"url": url, "error": str(e)})
+            logging.error("Error reading URL:"+str({"url": url, "error": str(e)}))
             bad_urls.append(url)
 
             # 根据错误信息收集坏 hostname
@@ -772,7 +774,7 @@ async def process_urls(
             # 无论成败，只要 url 非空就记入已访问
             if url:
                 visited_urls.append(url)
-                context.action_tracker.track_action(
+                context.actionTracker.track_action(
                     {
                         "thisStep": {
                             "action": "visit",

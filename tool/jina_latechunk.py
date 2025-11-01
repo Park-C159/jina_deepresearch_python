@@ -38,7 +38,7 @@ def trim_symbols(s: str) -> str:
 
 
 # ========== 主函数 ==========
-def cherry_pick(
+async def cherry_pick(
         query: str,
         long_context: str,
         options=None,

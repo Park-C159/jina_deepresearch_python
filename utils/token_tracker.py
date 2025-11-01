@@ -81,7 +81,6 @@ class TokenTracker(EventEmitter):
             total.promptTokens += (prompt_tokens or 0) * scaler
             total.completionTokens += (completion_tokens or 0) * scaler
             total.totalTokens += (total_tokens or 0) * scaler
-        print(total)
         return total
 
     # 对应 TS: getTotalUsageSnakeCase()
