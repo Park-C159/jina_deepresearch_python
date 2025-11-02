@@ -326,8 +326,9 @@ Required when action='reflect'. Reflection and planning, generate a list of most
     return AgentActionDynamic
 
 
-def get_evaluator_schema(eval_type):
-    # Base部分
+def get_evaluator_schema(eval_type: str):
+
+    # === Base 部分 ===
     class BaseSchemaBefore(BaseModel):
         think: str = Field(
             ...,
@@ -338,11 +339,11 @@ def get_evaluator_schema(eval_type):
     class BaseSchemaAfter(BaseModel):
         pass_: bool = Field(..., alias='pass', description='If the answer passes the test defined by the evaluator')
 
-    # 各种evaluation的补充schema
+    # === 补充 Schema ===
     class FreshnessAnalysis(BaseModel):
         days_ago: int = Field(
             ...,
-            min_length=0,
+            ge=0,
             description=f"datetime of the **answer** and relative to {date.today().isoformat()}."
         )
         max_age_days: Optional[int] = Field(
@@ -372,7 +373,7 @@ def get_evaluator_schema(eval_type):
             description="Comma-separated list of all aspects or dimensions that were actually addressed in the answer"
         )
 
-    # 各种评价类型对象
+    # === 各种评价类型 Schema ===
     class DefinitiveSchema(BaseSchemaBefore, BaseSchemaAfter):
         type: Literal['definitive']
 
@@ -405,20 +406,20 @@ def get_evaluator_schema(eval_type):
             max_length=1000
         )
 
-    if eval_type == "definitive":
-        return DefinitiveSchema
-    elif eval_type == "freshness":
-        return FreshnessSchema
-    elif eval_type == "plurality":
-        return PluralitySchema
-    elif eval_type == "attribution":
-        return AttributionSchema
-    elif eval_type == "completeness":
-        return CompletenessSchema
-    elif eval_type == "strict":
-        return StrictSchema
-    else:
+    # === 返回匹配类型 ===
+    schema_map = {
+        "definitive": DefinitiveSchema,
+        "freshness": FreshnessSchema,
+        "plurality": PluralitySchema,
+        "attribution": AttributionSchema,
+        "completeness": CompletenessSchema,
+        "strict": StrictSchema,
+    }
+
+    if eval_type not in schema_map:
         raise ValueError(f"Unknown evaluation type: {eval_type}")
+
+    return schema_map[eval_type]
 
 
 class ErrorAnalysisSchema(BaseModel):
@@ -462,7 +463,7 @@ class SearchQuery(BaseModel):
         max_length=50,
         description=(
             "keyword-based search query, 2-3 words preferred, total length < 30 characters. "
-            f"{'Must in ' + SEARCH_LANGUAGE_CODE if SEARCH_LANGUAGE_CODE else ''}"
+            f"{'Must in ' + str(SEARCH_LANGUAGE_CODE) if SEARCH_LANGUAGE_CODE else ''}"
         ),
     )
 
@@ -487,7 +488,7 @@ class QueryRewriterSchema(BaseModel):
 class CodeGeneratorSchema(BaseModel):
     think: str = Field(
         max_length=200,
-        description=f"Short explain or comments on the thought process behind the code. ${get_language_prompt()}"
+        description=f"Short explain or comments on the thought process behind the code. {get_language_prompt()}"
     )
     code: str = Field(
         description='The Python code that solves the problem and always use \'return\' statement '

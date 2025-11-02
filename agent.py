@@ -1141,8 +1141,7 @@ But unfortunately, you failed to solve the issue. You need to think out of the b
         finalized_answer = await finalizeAnswer(
             answer_step["answer"],
             all_knowledge,
-            context,
-            schema
+            context
         )
 
         repaired_answer = repairMarkdownFootnotesOuter(

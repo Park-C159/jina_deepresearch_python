@@ -493,7 +493,7 @@ def count_url_parts(url_items: list) -> dict:
 
 
 def filter_urls(
-        all_urls: Dict[str, str],
+        all_urls,
         visited_urls: List[str],
         bad_hostnames: List[str],
         only_hostnames: List[str]
@@ -510,7 +510,7 @@ def filter_urls(
 
     filtered = []
     for url, snippet in all_urls.items():
-        if snippet.strip() == '':
+        if snippet['title'].split() == '' and snippet['description'].split() == '':
             continue
         if url in visited_urls:
             continue
@@ -525,7 +525,6 @@ def filter_urls(
 
 async def rank_urls(url_items: list, options: dict = None, trackers=None) -> list:
     """
-    完整等价于 TypeScript 版本的 rankURLs()。
     :param url_items: list of dict，包含 url/title/description/weight 等字段
     :param options: 可配置的 boosting 参数
     :param trackers: 可选，包含 tokenTracker
@@ -565,6 +564,7 @@ async def rank_urls(url_items: list, options: dict = None, trackers=None) -> lis
         logging.debug(f"unique URLs: {len(url_items)} -> {len(unique_contents)}")
 
         token_tracker = getattr(trackers, "tokenTracker", None) if trackers else None
+        unique_contents = [d for d in unique_contents if d.strip() != '']
         # print("question:", question)
         # print("unique_contents:", unique_contents)
         rerank_result = await rerank_documents(question, unique_contents, token_tracker)
