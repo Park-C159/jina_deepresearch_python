@@ -657,9 +657,9 @@ async def evaluation_answer(question, action, evaluation_types, trackers, all_kn
             try:
                 result = await perform_evaluation(evaluation_type, prompt, trackers)
             except Exception as e:
-                log.error(f"Error performing ${evaluation_type} evaluation " + str(e))
+                log.error(f"Error performing {evaluation_type} evaluation " + str(e))
                 return {
-                    'pass': False,
+                    'pass_': False,
                     'think': f"Error {evaluation_type} immedidately return false, probably due to bad prompt?",
                     'type': evaluation_type,
                 }

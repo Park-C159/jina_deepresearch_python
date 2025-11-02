@@ -12,17 +12,18 @@ import io
 
 from tool.cosin import cosine_similarity
 from tool.embedding import get_embeddings
-from utils.token_tracker import TokenTracker   # 你自己实现的 Token 计数器
+from utils.token_tracker import TokenTracker  # 你自己实现的 Token 计数器
 
 log_info = logging.getLogger("img").info
 log_warning = logging.getLogger("img").warning
 log_error = logging.getLogger("img").error
 log_debug = logging.getLogger("img").debug
 
+
 # ------------------ 类型定义 ------------------
 class ImageObject(TypedDict):
     url: str
-    embedding: List[List[float]]   # 与 TS 侧保持一致，外层 List 是因为可能批处理
+    embedding: List[List[float]]  # 与 TS 侧保持一致，外层 List 是因为可能批处理
 
 
 class ImageReference(TypedDict):
@@ -37,7 +38,7 @@ async def download_file(uri: str) -> Tuple[bytes, str]:
             if resp.status != 200 or resp.content_type is None:
                 raise ValueError(f"Unexpected response {resp.status}")
             content_length = int(resp.headers.get("content-length", 0))
-            if content_length > 100 * 1024 * 1024:          # 100 MB
+            if content_length > 100 * 1024 * 1024:  # 100 MB
                 raise ValueError("File too large")
             if not resp.content_type.startswith("image/"):
                 raise ValueError(f"Invalid content-type {resp.content_type}")
@@ -57,7 +58,7 @@ async def load_image(inp: str | bytes) -> Tuple[bytes, str]:
             if header.split(";")[1].startswith("base64"):
                 buff = base64.b64decode(data)
             else:
-                buff = bytes.fromhex(data)   # 极少用，兼容 TS
+                buff = bytes.fromhex(data)  # 极少用，兼容 TS
         elif inp.startswith("http"):
             if inp.endswith(".svg"):
                 raise ValueError("Unsupported image type")
@@ -67,7 +68,7 @@ async def load_image(inp: str | bytes) -> Tuple[bytes, str]:
     else:
         buff = inp
 
-    if len(buff) > 20 * 1024 * 1024:        # 20 MB
+    if len(buff) > 20 * 1024 * 1024:  # 20 MB
         raise ValueError("Image too large")
     return buff, content_type
 
@@ -113,8 +114,8 @@ def fit_image_to_square_box(image_buffer: bytes, content_type: str, size: int = 
         if w < 256 or h < 256:
             raise ValueError("Image must be at least 256x256")
         if w > size or h > size:
-            scale = min(size/w, size/h)
-            w, h = int(w*scale), int(h*scale)
+            scale = min(size / w, size / h)
+            w, h = int(w * scale), int(h * scale)
             im = im.resize((w, h), Image.LANCZOS)
         out = io.BytesIO()
         im.save(out, format=content_type.split('/')[-1].upper())
@@ -128,10 +129,12 @@ async def process_image(url: str, tracker: TokenTracker) -> Optional[ImageObject
         base64_data = fit_image_to_square_box(buff, content_type, 256)
 
         # 调用统一 embedding 工具（内部会统计 token）
-        emb_resp = await get_embeddings([{"image": base64_data}],
-                                        tracker,
-                                        dimensions=512,
-                                        model="jina-clip-v2")
+        emb_resp = get_embeddings(
+            [{"image": base64_data}],
+            tracker, {
+                "dimensions": 512,
+                "model": "jina-clip-v2"}
+        )
         embedding: List[List[float]] = emb_resp["embeddings"]
         return ImageObject(url=url, embedding=embedding)
 
@@ -216,4 +219,3 @@ async def _test():
 
     unique = dedup_images_with_embeddings(imgs, [], 0.86)
     print("unique images:", [u["url"] for u in unique])
-

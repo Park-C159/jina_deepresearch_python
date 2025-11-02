@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field, field_validator, conlist, constr, create_model
 from sympy.physics.units import temperature
 
-from utils.schemas import get_language_prompt
+from utils.schemas import get_language_prompt, get_evaluator_schema
 
 # 加载.env文件到环境变量
 load_dotenv()
@@ -141,11 +141,11 @@ def build_agent_action_model(
 
 
 # 只允许 search
-AgentActionOnlySearch = build_agent_action_model(allow_search=True, allow_coding=True)
-
+# AgentActionOnlySearch = build_agent_action_model(allow_search=True, allow_coding=True)
+evaluator_schema = get_evaluator_schema('freshness')
 obj, completion = wrapped.chat.completions.create_with_completion(
     model="qwen-plus",
-    response_model=AgentActionOnlySearch,
+    response_model=evaluator_schema,
     messages=messages,
     temperature=0
 )

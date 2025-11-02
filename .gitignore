@@ -5,3 +5,4 @@ __pycache__
 */__pycache__
 .idea
 store_context/*
+result_output.txt

@@ -1,10 +1,12 @@
 import logging
 
+from config.config import get_model
 from tool.evaluator import get_knowledge_str
 from utils.safe_generator import ai_generate_object
+from utils.schemas import LANGUAGE_STYLE, LANGUAGE_CODE
 
 
-def get_prompt(md_content, all_knowledge, schema):
+def get_prompt(md_content, all_knowledge):
     knowledge_str = get_knowledge_str(all_knowledge)
     return {
         'system': f"""You are a senior editor with multiple best-selling books and columns published in top magazines. You break conventional thinking, establish unique cross-disciplinary connections, and bring new perspectives to the user.
@@ -53,7 +55,7 @@ Your task is to revise the provided markdown content (written by your junior int
 The following knowledge items are provided for your reference. Note that some of them may not be directly related to the content user provided, but may give some subtle hints and insights:
 {'\n\n'.join(knowledge_str)}
 
-IMPORTANT: Do not begin your response with phrases like "Sure", "Here is", "Below is", or any other introduction. Directly output your revised content in ${schema.languageStyle} that is ready to be published. Preserving HTML tables if exist, never use tripple backticks html to wrap html table.""",
+IMPORTANT: Do not begin your response with phrases like "Sure", "Here is", "Below is", or any other introduction. Directly output your revised content in {LANGUAGE_STYLE} that is ready to be published. Preserving HTML tables if exist, never use tripple backticks html to wrap html table.""",
         'user': md_content
     }
 
@@ -61,11 +63,9 @@ IMPORTANT: Do not begin your response with phrases like "Sure", "Here is", "Belo
 TOOL_NAME = 'finalizer'
 
 
-def getModel(TOOL_NAME):
-    pass
 
 
-async def finalizeAnswer(md_content, knowledge_items, trackers, schema):
+async def finalizeAnswer(md_content, knowledge_items, trackers):
     """
     使用大模型对 markdown 内容进行“润色”与“增强”，
     输出一个更专业、更流畅的版本。
@@ -73,13 +73,13 @@ async def finalizeAnswer(md_content, knowledge_items, trackers, schema):
 
     try:
         # === 1️⃣ 生成 Prompt ===
-        prompt = get_prompt(md_content, knowledge_items, schema)
+        prompt = get_prompt(md_content, knowledge_items)
         if hasattr(trackers, "actionTracker"):
-            trackers.actionTracker.track_think("finalize_answer", schema.languageCode)
+            trackers.actionTracker.track_think("finalize_answer", LANGUAGE_CODE)
 
         # === 2️⃣ 调用模型生成新文本 ===
         result = await ai_generate_object(
-            model=getModel(TOOL_NAME),
+            model=get_model(TOOL_NAME),
             system=prompt["system"],
             prompt=prompt["user"],
         )
@@ -103,5 +103,5 @@ async def finalizeAnswer(md_content, knowledge_items, trackers, schema):
         return result["text"]
 
     except Exception as error:
-        logging.error(TOOL_NAME, {"error": str(error)})
+        logging.error(TOOL_NAME + str({"error": str(error)}))
         return md_content

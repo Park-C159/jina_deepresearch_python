@@ -50,7 +50,7 @@ Response:
 
 
 class CodeSandbox:
-    def __init__(self, context=None, trackers=None,  maxAttempts=3):
+    def __init__(self, context=None, trackers=None, maxAttempts=3):
         self.trackers = trackers
         token_tracker = trackers.tokenTracker if trackers else None
 
@@ -134,7 +134,7 @@ class CodeSandbox:
             # 防御：若生成阶段没有返回 code
             if not code:
                 error_msg = 'No code was generated'
-                logging.warning('Coding error:', {'error': error_msg})
+                logging.warning('Coding error:' + str({'error': error_msg}))
                 attempts.append({'code': '', 'error': error_msg})
                 if i == self.maxAttempts - 1:
                     raise RuntimeError(f'Failed to generate working code after {self.maxAttempts} attempts')

@@ -260,7 +260,7 @@ async def build_image_references(
     valid_answer_chunk_indices = []
     valid_answer_chunk_positions = []
 
-    context.action_tracker.track_think("cross_reference", LANGUAGE_CODE)
+    context.actionTracker.track_think("cross_reference", LANGUAGE_CODE)
 
     for i, chunk in enumerate(answer_chunks):
         position = answer_chunk_positions[i]
@@ -284,7 +284,7 @@ async def build_image_references(
     try:
         embeddings_result = await get_embeddings(
             valid_answer_chunks,
-            context.token_tracker,
+            context.tokenTracker,
             {"dimensions": 512, "model": "jina-clip-v2"}
         )
         answer_embeddings.extend(embeddings_result["embeddings"])

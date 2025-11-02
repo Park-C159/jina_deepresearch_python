@@ -2,12 +2,13 @@ import logging
 import math
 import re
 import urllib.parse
+from dataclasses import dataclass
 from datetime import datetime
 
 import aiohttp
 import asyncio
 
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
 from tool.date_tools import format_date_based_on_type
 from tool.image_tools import process_image
@@ -23,6 +24,15 @@ import re
 import urllib.parse
 
 from utils.schemas import LANGUAGE_CODE
+
+
+@dataclass
+class KnowledgeItem:
+    question: str
+    answer: str
+    type: Optional[str] = None
+    updated: Optional[str] = None
+    references: Optional[List[str]] = None
 
 
 def extract_url_parts(url_str):
@@ -270,13 +280,13 @@ async def get_last_modified(url: str) -> str | None:
     api_url = f'https://api-beta-datetime.jina.ai?url={urllib.parse.quote(url)}'
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(api_url, timeout=10) as resp:
+            async with session.get(api_url, timeout=100) as resp:
                 data = await resp.json()
                 if data.get('bestGuess') and data.get('confidence', 0) >= 70:
                     return data['bestGuess']
         return None
     except Exception as e:
-        print('[ERROR] Failed to fetch last modified date', e)
+        print(f'[ERROR] Failed to fetch last modified date {url, e}')
         return None
 
 
@@ -483,7 +493,7 @@ def count_url_parts(url_items: list) -> dict:
 
 
 def filter_urls(
-        all_urls: Dict[str, Dict[str, Any]],
+        all_urls,
         visited_urls: List[str],
         bad_hostnames: List[str],
         only_hostnames: List[str]
@@ -493,13 +503,15 @@ def filter_urls(
     返回满足条件的 SearchSnippet 列表。
     """
 
-    def extract_hostname(url: str) -> str:
+    def extract_hostname(url_t: str) -> str:
         # 简单提取 hostname，可按需换成 urllib.parse
-        url = url.lstrip("https://").lstrip("http://")
-        return url.split("/")[0] if "/" in url else url
+        url_t = url_t.lstrip("https://").lstrip("http://")
+        return url_t.split("/")[0] if "/" in url_t else url_t
 
     filtered = []
     for url, snippet in all_urls.items():
+        if snippet['title'].split() == '' and snippet['description'].split() == '':
+            continue
         if url in visited_urls:
             continue
         hostname = extract_hostname(url)
@@ -513,7 +525,6 @@ def filter_urls(
 
 async def rank_urls(url_items: list, options: dict = None, trackers=None) -> list:
     """
-    完整等价于 TypeScript 版本的 rankURLs()。
     :param url_items: list of dict，包含 url/title/description/weight 等字段
     :param options: 可配置的 boosting 参数
     :param trackers: 可选，包含 tokenTracker
@@ -553,6 +564,9 @@ async def rank_urls(url_items: list, options: dict = None, trackers=None) -> lis
         logging.debug(f"unique URLs: {len(url_items)} -> {len(unique_contents)}")
 
         token_tracker = getattr(trackers, "tokenTracker", None) if trackers else None
+        unique_contents = [d for d in unique_contents if d.strip() != '']
+        # print("question:", question)
+        # print("unique_contents:", unique_contents)
         rerank_result = await rerank_documents(question, unique_contents, token_tracker)
         for res in rerank_result.get("results", []):
             idx = res["index"]
@@ -675,9 +689,8 @@ async def process_urls(
             if not normalized:
                 return None
             url = normalized  # 统一用归一化后的 URL
-
-            response = await read_url(url, True, context.token_tracker, with_images)
-            data = response["data"]
+            response = await read_url(url, True, context.tokenTracker, with_images)
+            data = response["response"]["data"]
             guessed_time = await get_last_modified(url)
             if guessed_time:
                 logging.debug(f"Guessed time for {url}: {guessed_time}")
@@ -690,6 +703,7 @@ async def process_urls(
             is_good = len(data["content"]) > spam_detect_length or not await classify_text(
                 data["content"]
             )
+
             if not is_good:
                 logging.warning(
                     f"Blocked content {len(data['content'])}:",
@@ -710,17 +724,17 @@ async def process_urls(
                 question, data["content"], {}, context, url
             )
             all_knowledge.append(
-                {
-                    "question": f'What do expert say about "{question}"?',
-                    "answer": answer,
-                    "references": [data["url"]],
-                    "type": "url",
-                    "updated": (
+                KnowledgeItem(
+                    question=f'What do expert say about "{question}"?',
+                    answer=answer,
+                    type="url",
+                    updated=(
                         format_date_based_on_type(datetime.fromisoformat(guessed_time), "full")
                         if guessed_time
                         else None
                     ),
-                }
+                    references=[data["url"]]
+                )
             )
 
             # 处理页面内链接
@@ -734,14 +748,14 @@ async def process_urls(
             # 处理图片
             if with_images and data.get("images"):
                 for alt, img_url in data["images"].items():
-                    img_obj = await process_image(img_url, context.token_tracker)
+                    img_obj = await process_image(img_url, context.tokenTracker)
                     if img_obj and not any(i["url"] == img_obj["url"] for i in image_objects):
                         image_objects.append(img_obj)
 
             return {"url": url, "result": response}
 
         except Exception as e:
-            logging.error("Error reading URL:", {"url": url, "error": str(e)})
+            logging.error("Error reading URL:" + str({"url": url, "error": str(e)}))
             bad_urls.append(url)
 
             # 根据错误信息收集坏 hostname
@@ -772,7 +786,7 @@ async def process_urls(
             # 无论成败，只要 url 非空就记入已访问
             if url:
                 visited_urls.append(url)
-                context.action_tracker.track_action(
+                context.actionTracker.track_action(
                     {
                         "thisStep": {
                             "action": "visit",
