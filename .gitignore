@@ -6,3 +6,6 @@ __pycache__
 .idea
 store_context/*
 result_output.txt
+*.log
+*.tmp
+*tmp*

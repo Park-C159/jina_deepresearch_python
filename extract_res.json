@@ -1,0 +1,148 @@
+{
+  "object": {
+    "tables": [
+      {
+        "table_id": "battle_overview",
+        "description": "三大战役总体战损数据表",
+        "rows": [
+          {
+            "entity": "人民解放军",
+            "dimensions": {
+              "战役名称": "辽沈战役"
+            },
+            "cells": [
+              {
+                "measure_id": "own_total_loss",
+                "value": 66523.0,
+                "unit": "人",
+                "raw_text": "66,523人"
+              },
+              {
+                "measure_id": "enemy_total_jian",
+                "value": 463300.0,
+                "unit": "人",
+                "raw_text": "463,300人"
+              }
+            ]
+          },
+          {
+            "entity": "人民解放军",
+            "dimensions": {
+              "战役名称": "淮海战役"
+            },
+            "cells": [
+              {
+                "measure_id": "own_total_loss",
+                "value": 71225.0,
+                "unit": "人",
+                "raw_text": "71,225人"
+              },
+              {
+                "measure_id": "enemy_total_jian",
+                "value": 543500.0,
+                "unit": "人",
+                "raw_text": "543,500人"
+              }
+            ]
+          },
+          {
+            "entity": "人民解放军",
+            "dimensions": {
+              "战役名称": "平津战役"
+            },
+            "cells": [
+              {
+                "measure_id": "own_total_loss",
+                "value": 38790.0,
+                "unit": "人",
+                "raw_text": "38,790人"
+              },
+              {
+                "measure_id": "enemy_total_jian",
+                "value": 576000.0,
+                "unit": "人",
+                "raw_text": "576,000人"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "table_id": "battle_details",
+        "description": "三大战役详细战损分解数据表",
+        "rows": [
+          {
+            "entity": "国民党军",
+            "dimensions": {
+              "战役名称": "辽沈战役"
+            },
+            "cells": [
+              {
+                "measure_id": "defect_count",
+                "value": 2600.0,
+                "unit": "人",
+                "raw_text": "2,600人"
+              },
+              {
+                "measure_id": "surrender_count",
+                "value": 80700.0,
+                "unit": "人",
+                "raw_text": "80,700人"
+              }
+            ]
+          },
+          {
+            "entity": "国民党军",
+            "dimensions": {
+              "战役名称": "淮海战役"
+            },
+            "cells": [
+              {
+                "measure_id": "defect_count",
+                "value": 28500.0,
+                "unit": "人",
+                "raw_text": "28,500人"
+              },
+              {
+                "measure_id": "surrender_count",
+                "value": 24000.0,
+                "unit": "人",
+                "raw_text": "24,000人"
+              }
+            ]
+          },
+          {
+            "entity": "国民党军",
+            "dimensions": {
+              "战役名称": "平津战役"
+            },
+            "cells": [
+              {
+                "measure_id": "defect_count",
+                "value": 25000.0,
+                "unit": "人",
+                "raw_text": "25,000人"
+              },
+              {
+                "measure_id": "surrender_count",
+                "value": 260000.0,
+                "unit": "人",
+                "raw_text": "260,000人"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "unresolved_items": [],
+    "notes": null
+  },
+  "usage": {
+    "promptTokens": 3368,
+    "completionTokens": 676,
+    "totalTokens": 4044,
+    "reasoningTokens": 0,
+    "cachedInputTokens": 0
+  }
+}
+

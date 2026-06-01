@@ -72,9 +72,9 @@ Evaluation: {
     }
 
 
-def set_langugae(query):
+def set_language(query):
     global SEARCH_LANGUAGE_CODE, LANGUAGE_STYLE, LANGUAGE_CODE
-    if languageISO6391Map[query]:
+    if languageISO6391Map.get(query):
         LANGUAGE_CODE = query
         LANGUAGE_STYLE = 'formal English'
         return
@@ -327,7 +327,6 @@ Required when action='reflect'. Reflection and planning, generate a list of most
 
 
 def get_evaluator_schema(eval_type: str):
-
     # === Base 部分 ===
     class BaseSchemaBefore(BaseModel):
         think: str = Field(
@@ -495,4 +494,16 @@ class CodeGeneratorSchema(BaseModel):
                     'to return the result. Focus on solving the core problem; '
                     'No need for error handling or try-catch blocks or code comments. '
                     'No need to declare variables that are already available, especially big long strings or arrays.'
+    )
+
+
+class ClarificationQuestionsSchema(BaseModel):
+    """只负责返回 3-5 个澄清问题"""
+    clarification_questions: conlist(
+        constr(strip_whitespace=True, min_length=2, max_length=100),
+        min_length=3,
+        max_length=5,
+    ) = Field(
+        ...,
+        description="针对当前用户需求的澄清问题列表，总是生成 3–5 个，尽可能多。"
     )

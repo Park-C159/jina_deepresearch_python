@@ -57,24 +57,49 @@ def get_tool_config(tool_name) -> ToolConfig:
     return res
 
 
-# --------------- 创建模型实例 ---------------
+# --------------- 插件化模型实例 ---------------
+_llm_plugin_cache = {}
+
+
+def _get_llm_plugin():
+    """获取当前配置的 LLM 插件实例（带缓存）。"""
+    global _llm_plugin_cache
+    provider = LLM_PROVIDER or config["defaults"].get("llm_provider", "gemini")
+    if provider not in _llm_plugin_cache:
+        # 懒加载 core 模块，避免循环导入
+        from core.plugin_manager import get_plugin_instance
+        from core.plugin_protocols import BaseLLMPlugin
+        instance = get_plugin_instance("llm", provider, config={})
+        if not isinstance(instance, BaseLLMPlugin):
+            raise TypeError(f"Provider {provider} is not a valid LLM plugin")
+        _llm_plugin_cache[provider] = instance
+    return _llm_plugin_cache[provider]
+
+
 def get_model(tool_name: str):
-    """返回 (已配置好的客户端, compatibility, model_name)"""
-    cfg = get_tool_config(tool_name)  # 里边应包含 cfg["model"] = "gpt-4o-mini" 之类
+    """
+    返回 (已配置好的客户端, compatibility, model_name)。
+    优先走插件系统；若插件系统未命中，回退到旧硬编码逻辑。
+    """
+    try:
+        plugin = _get_llm_plugin()
+        return plugin.get_client(tool_name)
+    except (ImportError, ValueError):
+        pass
+
+    # 回退：旧硬编码逻辑
+    cfg = get_tool_config(tool_name)
     provider_cfg: Dict[str, Any] = config["providers"].get(LLM_PROVIDER, {})
 
     if LLM_PROVIDER == "openai":
         if not OPENAI_API_KEY:
             raise RuntimeError("OPENAI_API_KEY not found")
-
         raw_cfg = provider_cfg.get("clientConfig") or {}
         client_kwargs = {"api_key": OPENAI_API_KEY}
         client_kwargs.update({k: v for k, v in raw_cfg.items() if k in _OPENAI_VALID_KEYS})
-
         if OPENAI_BASE_URL:
             client_kwargs["base_url"] = OPENAI_BASE_URL
-
-        compatibility = raw_cfg.get("compatibility")  # 可能为 None
+        compatibility = raw_cfg.get("compatibility")
         return openai.OpenAI(**client_kwargs), compatibility, cfg["model"]
 
     if LLM_PROVIDER == "vertex":
@@ -83,7 +108,6 @@ def get_model(tool_name: str):
         aiplatform.init(project=GCLOUD_PROJECT, **(provider_cfg.get("clientConfig") or {}))
         return aiplatform.ChatModel.from_pretrained(cfg["model"]), '', cfg["model"]
 
-    # 默认 Gemini
     if not GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY not found")
     genai.configure(api_key=GEMINI_API_KEY, **(provider_cfg.get("clientConfig") or {}))
@@ -91,6 +115,15 @@ def get_model(tool_name: str):
 
 
 def get_client(model: str) -> openai.OpenAI:
+    """获取底层 OpenAI-兼容客户端。优先走插件系统。"""
+    try:
+        plugin = _get_llm_plugin()
+        raw = plugin.get_raw_client()
+        if isinstance(raw, openai.OpenAI):
+            return raw
+    except (ImportError, ValueError, AttributeError):
+        pass
+
     if LLM_PROVIDER == "qwen":
         return openai.OpenAI(
             api_key=os.getenv("DASHSCOPE_API_KEY"),
@@ -101,5 +134,4 @@ def get_client(model: str) -> openai.OpenAI:
             api_key=os.getenv("OPENAI_API_KEY"),
             base_url=os.getenv("OPENAI_BASE_URL") or None,
         )
-    # 继续扩展 vertex / gemini ...
     raise ValueError(f"Unsupported provider: {LLM_PROVIDER}")

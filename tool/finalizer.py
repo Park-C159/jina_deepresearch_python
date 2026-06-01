@@ -63,8 +63,6 @@ IMPORTANT: Do not begin your response with phrases like "Sure", "Here is", "Belo
 TOOL_NAME = 'finalizer'
 
 
-
-
 async def finalizeAnswer(md_content, knowledge_items, trackers):
     """
     使用大模型对 markdown 内容进行“润色”与“增强”，
@@ -78,7 +76,7 @@ async def finalizeAnswer(md_content, knowledge_items, trackers):
             trackers.actionTracker.track_think("finalize_answer", LANGUAGE_CODE)
 
         # === 2️⃣ 调用模型生成新文本 ===
-        result = await ai_generate_object(
+        result = ai_generate_object(
             model=get_model(TOOL_NAME),
             system=prompt["system"],
             prompt=prompt["user"],
@@ -86,7 +84,7 @@ async def finalizeAnswer(md_content, knowledge_items, trackers):
 
         # === 3️⃣ 记录 Token 使用量 ===
         if hasattr(trackers, "tokenTracker"):
-            trackers.tokenTracker.trackUsage(TOOL_NAME, result["usage"])
+            trackers.tokenTracker.track_usage(TOOL_NAME, result["usage"])
 
         # === 4️⃣ 日志输出 ===
         logging.info(TOOL_NAME, {"text": result["text"]})

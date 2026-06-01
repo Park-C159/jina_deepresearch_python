@@ -66,9 +66,9 @@
     },
     "openai": {
       "default": {
-        "model": "qwen-plus",
+        "model": "qwen3-32b",
         "temperature": 0,
-        "maxTokens": 32768
+        "maxTokens": 16300
       },
       "tools": {
         "coder": {
@@ -81,43 +81,11 @@
           "temperature": 0.1
         },
         "serpCluster": {
-          "model": "qwen-plus",
+          "model": "qwen3-32b",
           "temperature": 0.7,
-          "maxTokens": 32768
-        },
-        "agent": {
-        },
-        "agentBeastMode": {
-          "temperature": 0.7
-        },
-        "fallback": {
-          "temperature": 0
-        },
-        "finalizer": {},
-        "reducer": {
           "maxTokens": 16000
-        }
-      }
-    },
-    "qwen-plus":{
-      "default": {
-        "model": "qwen-plus",
-        "temperature": 0.7,
-        "maxTokens": 8000
-      },
-      "tools": {
-        "coder": {
-          "temperature": 0.7
         },
-        "researchPlanner": {},
-        "evaluator": {},
-        "errorAnalyzer": {},
-        "queryRewriter": {
-          "temperature": 0.1
-        },
-        "serpCluster": {},
         "agent": {
-          "temperature": 0.7
         },
         "agentBeastMode": {
           "temperature": 0.7

@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional, TypedDict, Protocol, Type, TypeVar
 import hjson, openai, instructor
 from instructor import Mode
 from pydantic import BaseModel, Field
+from transformers import AutoTokenizer
+
 from config.config import get_tool_config, get_model, get_client
 from utils.get_log import get_logger
 from utils.token_tracker import TokenTracker
@@ -15,12 +17,68 @@ log = get_logger("safe_generator")
 
 T = TypeVar("T", bound=BaseModel)
 
+tokenizer = AutoTokenizer.from_pretrained(os.environ.get("TOKENIZER_PATH", "Qwen/Qwen3-32B"))
+MIN_COMPLETION_TOKENS = 512
 
-# ---- 这些依赖请替换为你工程中的真实实现 ----
-# from ai import generate_object as ai_generate_object, LanguageModelUsage, NoObjectGeneratedError, Schema
-# from yourpkg.token_tracker import TokenTracker
-# from yourpkg.config import getModel, ToolName, getToolConfig
-# from yourpkg.logging import logError, logDebug, logWarning
+
+def count_text_tokens(messages) -> int:
+    """
+    精确计算一组 chat messages 的 token 数。
+    优先使用 tokenizer 的 chat_template。
+    """
+    # 如果 Qwen 的 tokenizer 支持 chat_template，这是最推荐的方式
+    if hasattr(tokenizer, "apply_chat_template"):
+        text = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,  # 一般生成前会加 assistant 前缀
+        )
+        return len(tokenizer.encode(text, add_special_tokens=False))
+
+    # 否则就自己定义一个简单模板（要和服务端实际用的一致）
+    CHAT_TEMPLATE = "<|im_start|>{role}\n{content}<|im_end|>\n"
+    ASSISTANT_PREFIX = "<|im_start|>assistant\n"
+
+    full_text = ""
+    for m in messages:
+        full_text += CHAT_TEMPLATE.format(
+            role=m.get("role", ""),
+            content=m.get("content", ""),
+        )
+    full_text += ASSISTANT_PREFIX
+
+    return len(tokenizer.encode(full_text, add_special_tokens=False))
+
+
+def trim_messages_to_fit_budget(messages, max_total_tokens, min_completion_tokens=MIN_COMPLETION_TOKENS):
+    """
+    简单策略：保留第一个 system，其余只保留最近的若干条 user/assistant，
+    直到 prompt_tokens_est 足够小。
+    """
+    if not messages:
+        return messages
+
+    system_msgs = [m for m in messages if m.get("role") == "system"]
+    other_msgs = [m for m in messages if m.get("role") != "system"]
+
+    # 先全部保留，然后从前面开始砍 old 的对话
+    keep_msgs = system_msgs[:1] + other_msgs  # 最多保留一个 system
+
+    while True:
+        prompt_tokens_est = count_text_tokens(keep_msgs)
+        if prompt_tokens_est <= max_total_tokens - min_completion_tokens:
+            break
+
+        # 只剩 system 了也没办法了
+        if len(keep_msgs) <= 1:
+            break
+
+        # 删除最老的一条非 system
+        # （保留 keep_msgs[0] 作为 system，从 index=1 开始删）
+        keep_msgs.pop(1)
+
+    return keep_msgs
+
 
 # 占位类型与协议（最小化约束）
 class LanguageModelUsage(TypedDict, total=False):
@@ -90,7 +148,7 @@ def ai_generate_object(
         prompt=None,
         system=None,
         messages=None,
-        maxTokens=4096 * 2,
+        maxTokens=8192,
         temperature=0.7,
 ):
     """
@@ -102,7 +160,6 @@ def ai_generate_object(
     # 映射表，按需扩展
 
     client, compatibility, model_name = get_model(model)
-
 
     _MODE_MAP = {
         "tools": Mode.TOOLS,  # function calling
@@ -123,13 +180,25 @@ def ai_generate_object(
             messages.append({"role": "user", "content": prompt})
         if not messages:
             raise ValueError("Either `messages` or (`prompt`/`system`) must be provided")
+    # 估算 prompt 占用的 token 数，然后用 maxTokens 减掉
+    prompt_tokens_est = count_text_tokens(messages)
 
+    # 这里把 maxTokens 理解为「总预算 = prompt + completion」
+    # 可用的输出 token 不能小于一个小值，否则接口会报错
+        # 如果太长，就先裁剪一轮
+    if prompt_tokens_est >= maxTokens - MIN_COMPLETION_TOKENS:
+        messages = trim_messages_to_fit_budget(messages, maxTokens, MIN_COMPLETION_TOKENS)
+        prompt_tokens_est = count_text_tokens(messages)
+
+    available_tokens = maxTokens - prompt_tokens_est
+    extra = {"enable_thinking": False}
     if schema is None:
         completion = client.chat.completions.create(
             model=model_name,
             messages=messages,
-            max_tokens=maxTokens,
+            max_tokens=available_tokens,
             temperature=temperature,
+            extra_body=extra,
         )
         object_dict = completion.choices[0].message.content
     else:
@@ -137,8 +206,9 @@ def ai_generate_object(
             model=model_name,
             response_model=schema,
             messages=messages,
-            max_tokens=maxTokens,
+            max_tokens=available_tokens,
             temperature=temperature,
+            extra_body=extra,
         )
         object_dict = obj.model_dump() if isinstance(obj, BaseModel) else obj
     usage = getattr(completion, "usage", None)
@@ -217,6 +287,7 @@ class ObjectGeneratorSafe:
             return {"object": result.get("object"), "usage": usage}
 
         except Exception as error:
+            print(error)
             # 第一次兜底：手动解析错误输出
             try:
                 error_result = await self._handle_generate_object_error(error)

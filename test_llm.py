@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Optional, Literal
 
 import instructor
 import openai
@@ -122,7 +122,7 @@ def build_agent_action_model(
         __base__=ActionModel,
         think=think_field,
         action=(
-            str,
+            Literal[tuple(enabled_actions)],
             Field(
                 ...,
                 description=f"Choose exactly one best action from the available actions: {enabled_actions}, "
@@ -143,11 +143,15 @@ def build_agent_action_model(
 # 只允许 search
 # AgentActionOnlySearch = build_agent_action_model(allow_search=True, allow_coding=True)
 evaluator_schema = get_evaluator_schema('freshness')
+extra = {"enable_thinking": False}
+
 obj, completion = wrapped.chat.completions.create_with_completion(
-    model="qwen-plus",
+    model="qwen3-32b",
     response_model=evaluator_schema,
     messages=messages,
-    temperature=0
+    temperature=0,
+    extra_body=extra,
+
 )
 
 object_dict = obj.model_dump() if isinstance(obj, BaseModel) else obj

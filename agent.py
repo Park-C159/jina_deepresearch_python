@@ -15,15 +15,16 @@ from tool.error_analyzer import analyze_steps
 from tool.evaluator import evaluate_question, evaluation_answer
 from tool.finalizer import finalizeAnswer
 from tool.image_tools import dedup_images_with_embeddings, filter_images
+from tool.intent_reg import intent_query
 from tool.jina_dedup import dedup_queries
-from tool.jina_search import search
+from core.plugin_manager import get_plugin_instance
 from tool.queryrewriter import rewrite_query
 from tool.serp_cluster import serp_cluster
 from tool.text_tools import remove_html_tags, choose_k, build_md_from_answer, repairMarkdownFootnotesOuter, \
     fixCodeBlockIndentation, convertHtmlTablesToMd, repair_markdown_final
 from utils.action_tracker import ActionTracker
 from utils.safe_generator import ObjectGeneratorSafe
-from utils.schemas import MAX_QUERIES_PER_STEP, LANGUAGE_CODE, set_langugae, set_search_language_code, \
+from utils.schemas import MAX_QUERIES_PER_STEP, LANGUAGE_CODE, set_language, set_search_language_code, \
     build_agent_action_payload, MAX_REFLECT_PER_STEP, MAX_URLS_PER_STEP
 from utils.token_tracker import TokenTracker
 from utils.url_tool import *
@@ -37,6 +38,7 @@ STEP_SLEEP = float(os.getenv("STEP_SLEEP"))
 class KnowledgeItem:
     question: str
     answer: str
+    sourceCode: str = None
     type: Optional[str] = None
     updated: Optional[str] = None
     references: Optional[List[str]] = None
@@ -115,11 +117,6 @@ def compose_msgs(
     msgs.append({"role": "user", "content": user_content})
     return msgs
 
-
-# def sort_select_urls(urls, top_k: int) -> List[BoostedSearchSnippet]:
-#     """按 score 降序选前 top_k 个"""
-#     return sorted(urls, key=lambda x: x['score'], reverse=True)[:top_k]
-#
 
 def get_prompt(
         context: Optional[List[str]] = None,
@@ -349,44 +346,40 @@ async def execute_search_queries(
 
     utility_score = 0
 
-    for query in keywords_queries:
+    async def _search_single(query: Dict[str, Any]) -> Dict[str, Any]:
+        """执行单个查询并返回原始结果，避免并发修改共享状态。"""
         results = []
         old_query = query['q']
+        q_local = dict(query)
         if only_hostnames and len(only_hostnames) > 0:
-            query['q'] = f"{query['q']} site:{' OR site:'.join(only_hostnames)}"
+            q_local['q'] = f"{q_local['q']} site:{' OR site:'.join(only_hostnames)}"
         try:
-            log.info('Search query:' + str({'query': query}))
-            provider = search_provider or SEARCH_PROVIDER
-            if provider in ('jina', 'arxiv'):
-                num = None if meta else 30
-                resp = search(query, num=num, meta=meta, tracker=context.tokenTracker)
-                results = resp['response']['results'] if 'response' in resp and 'results' in resp['response'] else []
-            ## 暂时不支持下面注释的网页搜索模式
-            # elif provider == 'duck':
-            #     resp = await duck_search(query['q'], {'safe_search': SafeSearchType.STRICT})
-            #     results = resp['results'] if 'results' in resp else []
-            # elif provider == 'brave':
-            #     resp = await brave_search(query['q'])
-            #     results = resp['response']['web']['results'] if 'response' in resp and 'web' in resp['response'] and 'results' in resp['response']['web'] else []
-            # elif provider == 'serper':
-            #     resp = await serper_search(query)
-            #     results = resp['response']['organic'] if 'response' in resp and 'organic' in resp['response'] else []
+            log.info('Search query:' + str({'query': q_local}))
+            provider = search_provider or SEARCH_PROVIDER or "jina"
+            search_plugin = get_plugin_instance("search", provider, config={})
+            num = None if meta else 30
+            resp = await search_plugin.search(
+                q_local, domain="arxiv" if provider == "arxiv" else None, num=num, meta=meta, tracker=context.tokenTracker
+            )
+            # 统一适配不同插件的返回结构
+            if 'response' in resp and 'results' in resp['response']:
+                results = resp['response']['results']
+            elif 'response' in resp and 'result' in resp['response']:
+                results = resp['response']['result']
+            elif 'data' in resp:
+                results = resp['data']
             else:
-                results = []
+                results = resp.get('response', {}).get('results', [])
             if not results:
                 raise Exception('No results found')
         except Exception as e:
-            log.error(f"{SEARCH_PROVIDER} search failed for query:" + str({'query': query, 'error': e}))
-
-            # 401 错误时中止
-            if hasattr(e, 'response') and hasattr(e.response, 'status') and e.response.status == 401 and provider in (
-                    'jina', 'arxiv'):
-                raise Exception('Unauthorized Jina API key')
-            continue
+            log.error(f"{SEARCH_PROVIDER} search failed for query:" + str({'query': q_local, 'error': e}))
+            if hasattr(e, 'status') and e.status == 401:
+                raise Exception(f'Unauthorized {provider} API key')
+            return {"success": False, "old_query": old_query}
         finally:
             await asyncio.sleep(STEP_SLEEP)
 
-        # 构建 minResults 列表
         min_results = []
         for r in results:
             url = normalize_url(r.get('url') or r.get('link'))
@@ -400,48 +393,67 @@ async def execute_search_queries(
                 'date': r.get('date'),
             })
 
+        clusters = []
+        try:
+            clusters = await serp_cluster(min_results, context)
+        except Exception as e:
+            log.warning("serpCluster failed:" + str({"error": str(e)}))
+
+        joined_desc = "; ".join([r.get("description") or "" for r in min_results])
+        side_info = KnowledgeItem(
+            question=f'What do Internet say about "{old_query}"?',
+            answer=remove_html_tags(joined_desc),
+            type="side-info",
+            updated=format_date_range(q_local) if q_local.get("tbs") else None,
+        )
+
+        return {
+            "success": True,
+            "old_query": old_query,
+            "min_results": min_results,
+            "clusters": clusters,
+            "side_info": side_info,
+        }
+
+    # 并行执行所有搜索查询
+    search_results = await asyncio.gather(*[_search_single(q) for q in keywords_queries])
+
+    for sr in search_results:
+        if not sr["success"]:
+            continue
+        old_query = sr["old_query"]
+        min_results = sr["min_results"]
+        clusters = sr["clusters"]
+        side_info = sr["side_info"]
+
         for r in min_results:
             utility_score += add_to_all_urls(r, all_urls)
             web_contents[r['url']] = {
                 'title': r['title'],
-                # 'full': r['description'],
                 'chunks': [r['description']],
                 'chunk_positions': [[0, len(r['description'] or '')]],
             }
 
-        searched_queries.append(query['q'])
+        searched_queries.append(old_query)
 
-        try:
-            clusters = await serp_cluster(min_results, context)
-
-            for c in clusters:
-                new_knowledge.append(
-                    KnowledgeItem(
-                        question=c.get("question"),
-                        answer=c.get("insight"),
-                        references=getattr(c, "urls", None),
-                        type="url",
-                    )
+        for c in clusters:
+            new_knowledge.append(
+                KnowledgeItem(
+                    question=c.get("question"),
+                    answer=c.get("insight"),
+                    references=getattr(c, "urls", None),
+                    type="url",
                 )
-        except Exception as e:
-            log.warning("serpCluster failed:" + str({"error": str(e)}))
-        finally:
-            joined_desc = "; ".join([r.get("description") or "" for r in min_results])
-            side_info = KnowledgeItem(
-                question=f'What do Internet say about "{old_query}"?',
-                answer=remove_html_tags(joined_desc),
-                type="side-info",
-                updated=format_date_range(query) if query.get("tbs") else None,
             )
-            new_knowledge.append(side_info)
 
-            context.actionTracker.track_action({
-                "thisStep": {
-                    "action": "search",
-                    "think": "",
-                    "search_requests": [old_query],
-                }
-            })
+        new_knowledge.append(side_info)
+        context.actionTracker.track_action({
+            "thisStep": {
+                "action": "search",
+                "think": "",
+                "search_requests": [old_query],
+            }
+        })
 
     if len(searched_queries) == 0:
         if only_hostnames and len(only_hostnames) > 0:
@@ -525,9 +537,9 @@ async def get_response(
         last_content = messages[-1].get("content")
         if isinstance(last_content, str):
             question = last_content.strip()
-        elif isinstance(last_content, dict) and isinstance(last_content, list):
+        elif isinstance(last_content, list):
             # 筛选出 type 为 'text' 的所有内容
-            text_contents = [c for c in last_content if c.get('type') == 'text']
+            text_contents = [c for c in last_content if isinstance(c, dict) and c.get('type') == 'text']
 
             # 取最后一个（如果有），取其 'text' 字段，否则空字符串
             question = text_contents[-1]['text'] if text_contents else ''
@@ -537,7 +549,7 @@ async def get_response(
     else:
         messages = []
 
-    set_langugae(language_code or question)
+    set_language(language_code or question)
     if search_languge_code is not None:
         set_search_language_code(search_languge_code)
 
@@ -556,6 +568,14 @@ async def get_response(
     candidate_answers = []
     all_knowledge = []
     weighted_urls = []
+
+    clarification_questions = await intent_query(question, context)
+    if clarification_questions:
+        diary_context.append({
+            "role": "system",
+            "content": f"Clarification questions suggested: {clarification_questions}"
+        })
+
 
     diary_context = []
 
@@ -596,7 +616,7 @@ async def get_response(
 
         for u in extract_urls_with_description(str_msg):
             add_to_all_urls(u, all_URLs)
-    while context.tokenTracker.get_total_usage().totalTokens < regular_budget:
+    while context.tokenTracker.get_total_usage().totalTokens < regular_budget and total_step < 50:
         step += 1
         total_step += 1
         budget_percentage = f"{(context.tokenTracker.get_total_usage().totalTokens / token_budget * 100):.2f}"
@@ -677,6 +697,11 @@ async def get_response(
             current_question,
             final_answer_PIP if current_question == question else None
         )
+        # print("total_step: ", total_step)
+        # with open(f'test/msg_with_knowledge_{total_step}.json', 'w') as outfile:
+        #     json.dump(json.dumps(msg_with_knowledge), outfile)
+        # with open(f'test/system_{total_step}.json', 'w') as outfile:
+        #     json.dump(generate_prompt, outfile)
         result = await generator.generate_object({
             "model": "agent",
             "schema": schema,
@@ -686,6 +711,9 @@ async def get_response(
         })
         obj = result.get("object", {}) if isinstance(result, dict) else {}
         action = obj.get("action")
+        if obj.get(action) is None:
+            print(result)
+            continue
         this_step = {
             "action": action,
             "think": obj.get("think"),
@@ -1031,13 +1059,17 @@ You decided to think out of the box or cut from a completely different angle."""
             )
             try:
                 result = await sandbox.solve(this_step['coding_issue'])
-                all_knowledge.append({
-                    'question': f"What is the solution to the coding issue: {this_step['coding_issue']}?",
-                    'answer': result.solution.output,
-                    'sourceCode': result.solution.code,
-                    'type': 'coding',
-                    'updated': format_date_based_on_type(datetime.now(), 'full')
-                })
+                solution = result["solution"]
+                attempts = result["attempts"]
+                all_knowledge.append(
+                    KnowledgeItem(
+                        question=f"What is the solution to the coding issue: {this_step['coding_issue']}?",
+                        answer=str(solution["output"]),
+                        sourceCode=solution["code"],
+                        type='coding',
+                        updated=format_date_based_on_type(datetime.now(), 'full')
+                    )
+                )
                 diary_context.append(f"""
 At step {step}, you took the **coding** action and try to solve the coding issue: {this_step['coding_issue']}.
 You found the solution and add it to your knowledge for future reference.
@@ -1079,7 +1111,7 @@ But unfortunately, you failed to solve the issue. You need to think out of the b
         # break
         await asyncio.sleep(STEP_SLEEP)
 
-    if not getattr(this_step, "isFinal", False):
+    if not this_step.get("isFinal", False):
         # 计算 token 使用百分比
         total_usage = context.tokenTracker.get_total_usage()
         percent = (total_usage.totalTokens / token_budget) * 100
@@ -1195,28 +1227,40 @@ But unfortunately, you failed to solve the issue. You need to think out of the b
                 log.error("Error building image references:", {"error": str(error)})
                 answer_step["imageReferences"] = []
 
-    elif answer_step.get("isAggregated"):
+    else:
         # 聚合模式：合并答案
         answer_step["answer"] = "\n\n".join(candidate_answers)
+        result = await build_references(
+            answer_step["answer"],
+            all_web_contents,
+            context,
+            80,
+            max_ref,
+            min_rel_score,
+            only_hostnames
+        )
+        answer_step["answer"] = result["answer"]
+        answer_step["references"] = result["references"]
+        await update_references(answer_step, all_URLs)
         # answerStep["answer"] = await reduceAnswers(candidateAnswers, context, SchemaGen)
         answer_step["mdAnswer"] = repairMarkdownFootnotesOuter(build_md_from_answer(answer_step))
 
-        if with_images and answer_step.get("imageReferences"):
-            sorted_images = sorted(
-                answer_step["imageReferences"],
-                key=lambda img: img.get("relevanceScore", 0),
-                reverse=True
-            )
-
-            log.debug("[agent] all sorted image references:", {"count": len(sorted_images)})
-
-            deduped = dedup_images_with_embeddings(sorted_images, [])
-            filtered = filter_images(sorted_images, deduped)
-
-            log.debug("[agent] filtered images:", {"count": len(filtered)})
-
-            # 限制最多 10 张图像
-            answer_step["imageReferences"] = filtered[:10]
+        # if with_images and answer_step.get("imageReferences"):
+        #     sorted_images = sorted(
+        #         answer_step["imageReferences"],
+        #         key=lambda img: img.get("relevanceScore", 0),
+        #         reverse=True
+        #     )
+        #
+        #     log.debug("[agent] all sorted image references:", {"count": len(sorted_images)})
+        #
+        #     deduped = dedup_images_with_embeddings(sorted_images, [])
+        #     filtered = filter_images(sorted_images, deduped)
+        #
+        #     log.debug("[agent] filtered images:", {"count": len(filtered)})
+        #
+        #     # 限制最多 10 张图像
+        #     answer_step["imageReferences"] = filtered[:10]
 
     returned_urls = [r["url"] for r in weighted_urls[:num_returned_urls] if r and r.get("url")]
     return {
@@ -1229,33 +1273,19 @@ But unfortunately, you failed to solve the issue. You need to think out of the b
     }
 
 
-def zodToJsonSchema(schema):
+def zod2json_schema(schema):
     """
     将 Pydantic BaseModel 转换为 JSON Schema 格式。
     若不是 Pydantic 模型，则直接返回原对象。
     """
-    try:
-        # ✅ 兼容 Pydantic v2
-        if hasattr(schema, "model_json_schema"):
-            return schema.model_json_schema()
-
-        # ✅ 兼容 Pydantic v1
-        if hasattr(schema, "schema"):
-            return schema.schema()
-
-        # ✅ 若传入的是 BaseModel 实例
-        if isinstance(schema, BaseModel):
-            if hasattr(schema, "model_json_schema"):
-                return schema.model_json_schema()
-            if hasattr(schema, "schema"):
-                return schema.schema()
-
-        # 其他情况：不是 Pydantic 模型，直接返回原数据
-        return schema
-
-    except Exception as e:
-        # 若转换失败，返回错误信息
-        return {"error": f"Failed to convert schema: {str(e)}"}
+    # 类或实例统一判断
+    if isinstance(schema, type) and issubclass(schema, BaseModel):
+        # 是类
+        return schema.model_json_schema() if hasattr(schema, "model_json_schema") else schema.schema()
+    if isinstance(schema, BaseModel):
+        # 是实例
+        return schema.model_json_schema() if hasattr(schema, "model_json_schema") else schema.schema()
+    return schema
 
 
 def safe_json(obj):
@@ -1288,6 +1318,8 @@ async def store_context(prompt, schema, memory, step):
     :param memory: dict，包含 allContext, allKeywords, allQuestions, allKnowledge, weightedURLs, msgWithKnowledge
     :param step: int
     """
+    schema = zod2json_schema(schema)
+
     dir_path = f'./store_context/{step}/'
     os.makedirs(dir_path, exist_ok=True)
 
@@ -1298,40 +1330,30 @@ async def store_context(prompt, schema, memory, step):
     weightedURLs = memory.get('weightedURLs')
     msgWithKnowledge = memory.get('msgWithKnowledge')
 
-    try:
-        # 写入 prompt 文件
-        async with aiofiles.open(dir_path + f"prompt-{step}.txt", "w", encoding="utf-8") as f:
-            await f.write(
-                f"""
+    async def _write_file(filename, content):
+        try:
+            async with aiofiles.open(dir_path + filename, "w", encoding="utf-8") as f:
+                await f.write(content)
+        except Exception as error:
+            logging.error(f"Context storage failed for {filename}: {error}")
+
+    prompt_content = f"""
 Prompt:
 {prompt}
 
 JSONSchema:
 {safe_json(schema)}
 """
-            )
 
-        # 写入其他上下文文件
-        async with aiofiles.open(dir_path + "context.json", "w", encoding="utf-8") as f:
-            await f.write(safe_json(allContext))
-
-        async with aiofiles.open(dir_path + "queries.json", "w", encoding="utf-8") as f:
-            await f.write(safe_json(allKeywords))
-
-        async with aiofiles.open(dir_path + "questions.json", "w", encoding="utf-8") as f:
-            await f.write(safe_json(allQuestions))
-
-        async with aiofiles.open(dir_path + "knowledge.json", "w", encoding="utf-8") as f:
-            await f.write(safe_json(allKnowledge))
-
-        async with aiofiles.open(dir_path + "urls.json", "w", encoding="utf-8") as f:
-            await f.write(safe_json(weightedURLs))
-
-        async with aiofiles.open(dir_path + "messages.json", "w", encoding="utf-8") as f:
-            await f.write(safe_json(msgWithKnowledge))
-
-    except Exception as error:
-        logging.error(f"Context storage failed: {error}")
+    await asyncio.gather(
+        _write_file(f"prompt-{step}.txt", prompt_content),
+        _write_file("context.json", safe_json(allContext)),
+        _write_file("queries.json", safe_json(allKeywords)),
+        _write_file("questions.json", safe_json(allQuestions)),
+        _write_file("knowledge.json", safe_json(allKnowledge)),
+        _write_file("urls.json", safe_json(weightedURLs)),
+        _write_file("messages.json", safe_json(msgWithKnowledge)),
+    )
 
 
 async def main():
@@ -1342,7 +1364,7 @@ async def main():
     parser.add_argument("--search_provider", type=str, default="jina", help="Search provider (e.g. jina, none)")
     parser.add_argument("--language_code", type=str, default="en", help="Language code for response")
     parser.add_argument("--with_images", action="store_true", help="Enable image analysis")
-    parser.add_argument("--token_budget", type=int, default=100000000, help="Maximum token budget")
+    parser.add_argument("--token_budget", type=int, default=10000000, help="Maximum token budget")
     parser.add_argument("--max_bad_attempts", type=int, default=2, help="Number of bad attempts before stopping")
     parser.add_argument("--existing_context", type=str, default=None, help="Existing tracker context (if any)")
     parser.add_argument("--num_returned_urls", type=int, default=5, help="Number of URLs to return")
@@ -1356,6 +1378,15 @@ async def main():
 
     args = parser.parse_args()
 
+
+    # 处理 existing_context：命令行传入的是字符串，需反序列化或置为 None
+    existing_ctx = None
+    if args.existing_context:
+        try:
+            existing_ctx = json.loads(args.existing_context)
+        except Exception:
+            existing_ctx = None
+
     # 调用 get_response
     result = await get_response(
         question=args.question,
@@ -1365,7 +1396,7 @@ async def main():
         with_images=args.with_images,
         token_budget=args.token_budget,
         max_bad_attempts=args.max_bad_attempts,
-        existing_context=args.existing_context,
+        existing_context=existing_ctx,
         messages=[],
         num_returned_urls=args.num_returned_urls,
         no_direct_answer=args.no_direct_answer,
@@ -1378,9 +1409,10 @@ async def main():
     )
 
     with open("result_output.txt", "a", encoding="utf-8") as f:
-        f.write(json.dumps(result, ensure_ascii=False, indent=2) + "\n\n")
+        f.write(str(result) + "\n\n")
 
-    pprint(result["result"])
+    pprint(result.get("result"))
+
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -510,7 +510,7 @@ def filter_urls(
 
     filtered = []
     for url, snippet in all_urls.items():
-        if snippet['title'].split() == '' and snippet['description'].split() == '':
+        if not snippet['title'].strip() and not snippet['description'].strip():
             continue
         if url in visited_urls:
             continue

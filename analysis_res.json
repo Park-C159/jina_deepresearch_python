@@ -1,0 +1,149 @@
+{
+  "object": {
+    "entities": [
+      "人民解放军",
+      "国民党军"
+    ],
+    "dimensions": [
+      "战役名称"
+    ],
+    "tables": {
+      "battle_overview": "三大战役总体战损数据表",
+      "battle_details": "三大战役详细战损分解数据表"
+    },
+    "measures": [
+      {
+        "id": "own_total_loss",
+        "name": "解放军总损失",
+        "description": "记录每场战役中解放军阵亡、负伤和失踪的总人数。",
+        "unit": "人",
+        "kind": "count",
+        "source_hint": "解放军总损失",
+        "is_primary": true
+      },
+      {
+        "id": "enemy_total_jian",
+        "name": "国民党军总歼灭",
+        "description": "记录每场战役中国民党军被歼灭的总人数。",
+        "unit": "人",
+        "kind": "count",
+        "source_hint": "国民党军总歼灭",
+        "is_primary": true
+      },
+      {
+        "id": "defect_count",
+        "name": "国民党军起义人数",
+        "description": "记录每场战役中国民党军起义的人数。",
+        "unit": "人",
+        "kind": "count",
+        "source_hint": "起义",
+        "is_primary": true
+      },
+      {
+        "id": "surrender_count",
+        "name": "国民党军投诚人数",
+        "description": "记录每场战役中国民党军投诚的人数。",
+        "unit": "人",
+        "kind": "count",
+        "source_hint": "投诚",
+        "is_primary": true
+      }
+    ],
+    "derived_metrics": [
+      {
+        "id": "exchange_ratio",
+        "name": "交换比",
+        "description": "反映解放军损失与国民党军被歼灭之间的比率，用于衡量作战效率。",
+        "formula": "(enemy_total_jian / own_total_loss)",
+        "unit": null,
+        "kind": "ratio",
+        "based_on": [
+          "own_total_loss",
+          "enemy_total_jian"
+        ]
+      },
+      {
+        "id": "defect_percentage",
+        "name": "起义占比",
+        "description": "计算国民党军起义人数占其被歼灭总数的比例，用于评估政治瓦解效果。",
+        "formula": "(defect_count / enemy_total_jian) *100",
+        "unit": "%",
+        "kind": "percentage",
+        "based_on": [
+          "defect_count",
+          "enemy_total_jian"
+        ]
+      },
+      {
+        "id": "surrender_percentage",
+        "name": "投诚占比",
+        "description": "计算国民党军投诚人数占其被歼灭总数的比例，于评估政治瓦解效果。",
+        "formula": "(surrender_count / enemy_total_jian) * 100",
+        "unit": "%",
+        "kind": "percentage",
+        "based_on": [
+          "surrender_count",
+          "enemy_total_jian"
+        ]
+      }
+    ],
+    "charts": [
+      {
+        "id": "chart_overall_losses",
+        "title": "三大战役解放军与国民党军总损失对比",
+        "description": "展示辽沈、淮海、平津三大战役中双方总损失人数的直接比较，突出非对称性特征。",
+        "chart_type": "grouped_bar",
+        "source_table": "battle_overview",
+        "x_dimension": "战役名称",
+        "x_order": null,
+        "series": [
+          "own_total_loss",
+          "enemy_total_jian"
+        ],
+        "insert_after_heading": "一、总体战损概览",
+        "priority": 1,
+        "max_series": null
+      },
+      {
+        "id": "chart_exchange_ratio_trend",
+        "title": "三大战役交换比趋势分析",
+        "description": "展示三大战役中解放军与国民党军的交换比变化趋势，体现战术效率提升。",
+        "chart_type": "bar",
+        "source_table": "battle_overview",
+        "x_dimension": "战役名称",
+        "x_order": null,
+        "series": [
+          "exchange_ratio"
+        ],
+        "insert_after_heading": "三、深度洞察与模式识别",
+        "priority": 1,
+        "max_series": null
+      },
+      {
+        "id": "chart_nationalist_defection_breakdown",
+        "title": "国民党军歼灭构成（起义+投诚）比例分析",
+        "description": "展示各战役中通过政治工作实现的国民党军歼灭比例，突显政治瓦解效应。",
+        "chart_type": "stacked_bar_100",
+        "source_table": "battle_details",
+        "x_dimension": "战役名称",
+        "x_order": null,
+        "series": [
+          "defect_percentage",
+          "surrender_percentage"
+        ],
+        "insert_after_heading": "三、深度洞察与模式识别",
+        "priority": 1,
+        "max_series": null
+      }
+    ],
+    "comments": null
+  },
+  "usage": {
+    "promptTokens": 3618,
+    "completionTokens": 897,
+    "totalTokens": 4515,
+    "reasoningTokens": 0,
+    "cachedInputTokens": 0
+  }
+}
+
