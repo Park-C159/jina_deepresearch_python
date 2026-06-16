@@ -3,6 +3,8 @@ import os
 import textwrap
 
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 
 from utils.safe_generator import ObjectGeneratorSafe
 from utils.schemas import CodeGeneratorSchema
@@ -33,28 +35,46 @@ def get_analysis_code_prompt(need, text, previous_attempts, file_name):
 """
 
     return {
-        'system': f"""你是一个Python统计分析代码生成助手，擅长根据文本和数据表结构，生成可直接运行的 Python + matplotlib 的统计可视化代码。
+        'system': f"""你是一个Python统计分析代码生成助手，擅长根据文本和数据表结构，生成可直接运行的 Python + matplotlib + sklearn 的统计可视化代码。
 
 <rules>
-- 生成直接绘图的纯 Python 代码。
+- 生成直接绘图或执行统计分析的纯 Python 代码。
 - 一个图表规格，描述了要画的图类型、横轴维度、需要展示的度量等信息。
-- 生成一段可直接执行的 Python 代码字符串，使用 `matplotlib` 根据下面本文中的信息和要求绘制指定图表，并保存为 PNG 图片。
-- 你不需要也不能访问其余数据，只需要按文本中的内容抽取数据作为输入写出通用的绘图逻辑。
-- 只能使用标准库 + `matplotlib` + `pandas`，不要使用 seaborn 等其他第三方可视化库。
+- 生成一段可直接执行的 Python 代码字符串，使用 `matplotlib` + `pandas` + `numpy` + `sklearn` 根据下面本文中的信息和要求绘制指定图表或执行统计分析，并保存为 PNG 图片。
+- **数据来源优先级**：如果 <text> 中提供了数据文件路径（例如给出了 CSV 文件路径及 `pd.read_csv(...)` 示例），你**必须优先使用 pandas 读取该文件**以获取完整、准确的数据；只有在没有提供数据文件路径时，才从文本中解析内联数据。
+- 读取数据文件时请使用文本中给出的**完整路径**（例如 `pd.read_csv(r"uploaded_data/xxx.csv")`），不要凭空猜测文件名（如直接写 `'trend.csv'`），否则会因找不到文件而报错。
+- 不要凭空编造数据，所有数值都应来自文本提供的数据文件或文本中明确给出的内联数据。
+- 可用库：标准库 + `matplotlib` + `pandas` + `numpy` + `sklearn`
 - 默认假设运行环境中已经有：
 ```python
 import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
 ```
 </rules>
+
+支持的统计分析类型：
+1. **描述统计**: 柱状图、折线图、饼图、堆叠图、面积图
+2. **回归分析**: 线性回归、多项式回归、散点图+拟合线、残差图
+   - 使用 sklearn.linear_model.LinearRegression
+   - 计算 R² 值并在图上标注
+3. **分类分析**: 
+   - 混淆矩阵热力图（使用 sklearn.metrics.confusion_matrix）
+   - ROC 曲线（使用 sklearn.metrics.roc_curve, auc）
+   - 分类准确率柱状图对比
+4. **时间序列**: 趋势图、同比环比图
+5. **对比分析**: 分组柱状图、箱线图、小提琴图
 
 {'Previous attempts and their errors:' + str(previous_attempts_context) if len(previous_attempts) > 0 else ''}
 
 图形要求：
 - 设置合适的图像尺寸，例如 plt.figure(figsize=(8, 5))。
-- 设置标题：使用 ChartSpec.title。
+- 设置标题：使用 ChartSpec.title 或 plot_title。
 - 设置 x/y 轴标签（如果可以从上下文推断单位，可简单写入）。
 - 添加图例，避免歧义。
 - 使用 plt.tight_layout() 优化布局。
+- 对于回归分析，在图上标注 R² 值和回归方程。
+- 对于分类分析，在图上标注准确率、AUC 等关键指标。
 - 最后使用 plt.savefig("{file_name}", dpi=300, bbox_inches="tight") 保存图片，并调用 plt.close() 释放资源。
 - 代码中不要调用 plt.show()，也不要打印多余信息。
 
@@ -183,6 +203,8 @@ class AnalysisCodeSandbox:
         try:
             exec_env = {
                 "plt": plt,
+                "pd": pd,
+                "np": np,
             }
 
             logging.debug("Running analysis code:\n%s", code)

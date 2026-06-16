@@ -616,7 +616,7 @@ If multiple sections have very similar structure, suggest another presentation f
 Do not encourage deeply nested structure, flatten it into natural language sections/paragraphs or even tables. Every table should use HTML table syntax <table> <thead> <tr> <th> <td> without any CSS styling.
 
 The following knowledge items are provided for your reference. Note that some of them may not be directly related to the question/answer user provided, but may give some subtle hints and insights:
-{'\n\n'.join(knowledge_str)}""",
+{(chr(10) + chr(10)).join(knowledge_str)}""",
         'user': f"""
 Dear reviewer, I need your feedback on the following question-answer pair:
 

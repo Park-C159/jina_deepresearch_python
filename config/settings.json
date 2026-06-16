@@ -55,6 +55,18 @@
         "finalizer": {
           "model": "gemini-2.5-flash-lite"
         },
+        "analysisplan": {
+          "temperature": 0.6,
+          "maxTokens": 16000
+        },
+        "analysisPlan": {
+          "temperature": 0.5,
+          "maxTokens": 8000
+        },
+        "analysisCoder": {
+          "temperature": 0.7,
+          "maxTokens": 8000
+        },
         "reducer": {
           "maxTokens": 16000
         },
@@ -66,7 +78,7 @@
     },
     "openai": {
       "default": {
-        "model": "qwen3-32b",
+        "model": "qwen-plus",
         "temperature": 0,
         "maxTokens": 16300
       },
@@ -81,7 +93,7 @@
           "temperature": 0.1
         },
         "serpCluster": {
-          "model": "qwen3-32b",
+          "model": "qwen-plus",
           "temperature": 0.7,
           "maxTokens": 16000
         },
@@ -94,6 +106,18 @@
           "temperature": 0
         },
         "finalizer": {},
+        "analysisplan": {
+          "temperature": 0.6,
+          "maxTokens": 16000
+        },
+        "analysisPlan": {
+          "temperature": 0.5,
+          "maxTokens": 8000
+        },
+        "analysisCoder": {
+          "temperature": 0.7,
+          "maxTokens": 8000
+        },
         "reducer": {
           "maxTokens": 16000
         }

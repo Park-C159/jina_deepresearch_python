@@ -23,6 +23,7 @@ from tool.serp_cluster import serp_cluster
 from tool.text_tools import remove_html_tags, choose_k, build_md_from_answer, repairMarkdownFootnotesOuter, \
     fixCodeBlockIndentation, convertHtmlTablesToMd, repair_markdown_final
 from utils.action_tracker import ActionTracker
+from utils.memory import MemoryManager
 from utils.safe_generator import ObjectGeneratorSafe
 from utils.schemas import MAX_QUERIES_PER_STEP, LANGUAGE_CODE, set_language, set_search_language_code, \
     build_agent_action_payload, MAX_REFLECT_PER_STEP, MAX_URLS_PER_STEP
@@ -158,7 +159,7 @@ You have conducted the following actions:
     url_list = sort_select_urls(all_urls or [], max_urls=20)
     if allow_read and url_list:
         url_str = "\n".join(
-            f"  - [idx={idx + 1}] [weight={item["score"]:.2f}] \"{item["url"]}\": \"{item["merged"][:50]}\""
+            f"  - [idx={idx + 1}] [weight={item['score']:.2f}] \"{item['url']}\": \"{item['merged'][:50]}\""
             for idx, item in enumerate(url_list)
         )
         action_sections.append(
@@ -566,18 +567,19 @@ async def get_response(
     all_questions = [question]
     all_keywords = []
     candidate_answers = []
-    all_knowledge = []
+    # 记忆模块：统一管理检索知识，超出上限时自动压缩，每轮迭代读取
+    memory = MemoryManager(make_item=KnowledgeItem, token_tracker=context.tokenTracker)
+    all_knowledge = memory.items  # 与记忆模块共享同一列表引用
     weighted_urls = []
+
+    diary_context = []
 
     clarification_questions = await intent_query(question, context)
     if clarification_questions:
-        diary_context.append({
-            "role": "system",
-            "content": f"Clarification questions suggested: {clarification_questions}"
-        })
+        diary_context.append(
+            f"Clarification questions suggested: {clarification_questions}"
+        )
 
-
-    diary_context = []
 
     allow_answer = False
     allow_read = True
@@ -619,6 +621,13 @@ async def get_response(
     while context.tokenTracker.get_total_usage().totalTokens < regular_budget and total_step < 50:
         step += 1
         total_step += 1
+        # 每轮迭代先读取并整理记忆：若记忆超出上限，则压缩较早的知识，避免上下文膨胀
+        try:
+            compressed = await memory.consolidate(reason=f"step-{total_step}")
+            if compressed:
+                log.debug(f"Memory consolidated at step {total_step}, now {len(all_knowledge)} items")
+        except Exception as e:
+            log.warning(f"Memory consolidate failed: {e}")
         budget_percentage = f"{(context.tokenTracker.get_total_usage().totalTokens / token_budget * 100):.2f}"
         log.debug(f"Step {total_step} / Budget used {budget_percentage}%" + str({" gaps": gaps}))
         allow_reflect = allow_reflect and (len(gaps) <= MAX_REFLECT_PER_STEP)
@@ -723,7 +732,7 @@ async def get_response(
         action_names = ['search', 'read', 'answer', 'reflect', 'coding']
 
         actions_str = ', '.join([name for allowed, name in zip(actions, action_names) if allowed])
-        log.debug(f"`Step decision: {this_step["action"]} <- [{actions_str}]`, {this_step}, {current_question}")
+        log.debug(f"`Step decision: {this_step['action']} <- [{actions_str}]`, {this_step}, {current_question}")
         context.actionTracker.track_action({
             "totalStep": total_step,
             "thisStep": this_step,
@@ -1017,9 +1026,12 @@ You decided to think out of the box or cut from a completely different angle.
                     with_images
                 )
                 url_results, success = pu.get("urlResults"), pu.get("success")
+                _visited_urls_str = "\n".join(
+                    r["url"] for r in url_results if r is not None
+                )
                 diary_context.append(
                     f"""At step {step}, you took the **visit** action and deep dive into the following URLs:
-{'\n'.join(r["url"] for r in url_results if r is not None)}
+{_visited_urls_str}
 You found some useful information on the web and add them to your knowledge for future reference.""" if success else f"At step {step}, you took the **visit** action and try to visit some URLs but failed to read the content. You need to think out of the box or cut from a completely different angle."
                 )
                 if success:

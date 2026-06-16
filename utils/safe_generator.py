@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from datetime import datetime, timezone
@@ -180,17 +181,25 @@ def ai_generate_object(
             messages.append({"role": "user", "content": prompt})
         if not messages:
             raise ValueError("Either `messages` or (`prompt`/`system`) must be provided")
-    # 估算 prompt 占用的 token 数，然后用 maxTokens 减掉
+    # 估算 prompt 占用的 token 数
     prompt_tokens_est = count_text_tokens(messages)
 
-    # 这里把 maxTokens 理解为「总预算 = prompt + completion」
-    # 可用的输出 token 不能小于一个小值，否则接口会报错
-        # 如果太长，就先裁剪一轮
-    if prompt_tokens_est >= maxTokens - MIN_COMPLETION_TOKENS:
-        messages = trim_messages_to_fit_budget(messages, maxTokens, MIN_COMPLETION_TOKENS)
+    # maxTokens 语义：期望的「输出(completion) token 预算」（与底层 API 的 max_tokens 一致）。
+    # 之前把它当作 prompt+completion 的总预算，导致原文较长时输出空间被严重挤占、报告被压短；
+    # 现改为：输出预算直接取 maxTokens，仅当 prompt + 输出预算超出上下文窗口时才裁剪 prompt。
+    context_window = int(os.environ.get("MODEL_CONTEXT_WINDOW", "32768"))
+    completion_budget = max(MIN_COMPLETION_TOKENS, maxTokens)
+
+    # 若 prompt + 输出预算超过上下文窗口，先裁剪 prompt 以腾出输出空间
+    if prompt_tokens_est + completion_budget > context_window:
+        messages = trim_messages_to_fit_budget(messages, context_window, completion_budget)
         prompt_tokens_est = count_text_tokens(messages)
 
-    available_tokens = maxTokens - prompt_tokens_est
+    # 输出 token 不能超过窗口剩余空间，也不小于最小值，否则接口会报错
+    available_tokens = max(
+        MIN_COMPLETION_TOKENS,
+        min(completion_budget, context_window - prompt_tokens_est),
+    )
     extra = {"enable_thinking": False}
     if schema is None:
         completion = client.chat.completions.create(
@@ -272,7 +281,11 @@ class ObjectGeneratorSafe:
             raise ValueError("Model and schema are required parameters")
 
         try:
-            result = ai_generate_object(
+            # 将同步阻塞的 LLM 调用卸载到线程池，使其成为真正可并发的异步操作：
+            # 多个 agent 同时 await 时，各自的 LLM 请求可在不同线程并行进行（IO 重叠），
+            # 不再阻塞事件循环，这是 agent team 并行调度的前提。
+            result = await asyncio.to_thread(
+                ai_generate_object,
                 model=model,
                 schema=schema,
                 prompt=prompt,
@@ -332,7 +345,8 @@ class ObjectGeneratorSafe:
 
                         distilled_schema = self._create_distilled_schema(schema)
 
-                        fallback_result = ai_generate_object(
+                        fallback_result = await asyncio.to_thread(
+                            ai_generate_object,
                             model=get_model("fallback"),
                             schema=distilled_schema,
                             prompt=(

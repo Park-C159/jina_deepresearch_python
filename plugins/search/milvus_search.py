@@ -15,6 +15,7 @@ class MilvusSearchPlugin(BaseSearchPlugin):
 
     def initialize(self, cfg: Dict[str, Any]) -> None:
         self.base_url = cfg.get("base_url") or os.getenv("MILVUS_BASE_URL", "http://192.168.12.162:5445/milvus/rerank_query")
+        self.api_key = cfg.get("api_key") or os.getenv("MILVUS_API_KEY")
         self.collection = cfg.get("collection") or os.getenv("MILVUS_COLLECTION", "all_info")
         self.limit = cfg.get("limit", 100)
         self.radius = cfg.get("radius", 0.5)
@@ -44,6 +45,8 @@ class MilvusSearchPlugin(BaseSearchPlugin):
         }
 
         headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
 
         async with aiohttp.ClientSession() as session:
             async with session.post(

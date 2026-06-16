@@ -62,18 +62,35 @@ _llm_plugin_cache = {}
 
 
 def _get_llm_plugin():
-    """获取当前配置的 LLM 插件实例（带缓存）。"""
+    """获取当前配置的 LLM 插件实例（带缓存）。
+
+    provider / base_url / api_key 均在运行时从环境变量动态读取，
+    以便前端可以自定义 LLM 提供商、URL 地址和 API key。
+    缓存按 (provider, base_url, api_key) 维度区分，配置变化时自动重建实例。
+    """
     global _llm_plugin_cache
-    provider = LLM_PROVIDER or config["defaults"].get("llm_provider", "gemini")
-    if provider not in _llm_plugin_cache:
+    provider = os.getenv("LLM_PROVIDER") or config["defaults"].get("llm_provider", "gemini")
+    api_key = os.getenv("LLM_API_KEY")
+    base_url = os.getenv("LLM_BASE_URL")
+    cache_key = (provider, base_url or "", api_key or "")
+
+    if cache_key not in _llm_plugin_cache:
         # 懒加载 core 模块，避免循环导入
-        from core.plugin_manager import get_plugin_instance
+        from core.plugin_manager import get_manager
         from core.plugin_protocols import BaseLLMPlugin
-        instance = get_plugin_instance("llm", provider, config={})
+
+        llm_cfg: Dict[str, Any] = {}
+        if api_key:
+            llm_cfg["api_key"] = api_key
+        if base_url:
+            llm_cfg["base_url"] = base_url
+
+        # 用显式配置重新加载实例，确保自定义 url/key 生效
+        instance = get_manager().reload("llm", provider, config=llm_cfg)
         if not isinstance(instance, BaseLLMPlugin):
             raise TypeError(f"Provider {provider} is not a valid LLM plugin")
-        _llm_plugin_cache[provider] = instance
-    return _llm_plugin_cache[provider]
+        _llm_plugin_cache[cache_key] = instance
+    return _llm_plugin_cache[cache_key]
 
 
 def get_model(tool_name: str):

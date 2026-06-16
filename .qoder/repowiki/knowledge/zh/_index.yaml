@@ -1,0 +1,261 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: zh-CN
+branch: dev-yth
+exported_at: "2026-06-13T14:24:14Z"
+modules:
+    "":
+        dir_name: DeepStatic 智能体编排与插件化运行时
+        title: DeepStatic 智能体编排与插件化运行时
+        scope:
+            - .gitignore
+            - requirements.txt
+            - env_example.txt
+            - PLUGINS_GUIDE.md
+            - DeepStatic_架构与实现详解报告.md
+            - intent_reg.py
+            - test_coding.py
+            - test_llm.py
+            - test_visting.py
+            - analysis_res.json
+            - extract_res.json
+            - .env
+            - .idea\.gitignore
+            - .idea\inspectionProfiles\Project_Default.xml
+            - .idea\inspectionProfiles\profiles_settings.xml
+            - .idea\jina_deepresearch_python.iml
+            - .idea\misc.xml
+            - .idea\modules.xml
+            - .idea\vcs.xml
+            - .idea\workspace.xml
+            - agent.py
+            - config\config.py
+            - config\config_loader.py
+            - config\settings.json
+            - core\__init__.py
+            - core\plugin_manager.py
+            - core\plugin_protocols.py
+            - core\plugin_registry.py
+            - final_report2.md
+            - images\3天与7天用户流失率趋势.png
+            - images\三大战役交换比趋势.png
+            - images\三大战役国民党军歼灭方式构成.png
+            - images\三大战役解放军伤亡类型构成.png
+            - images\不同匹配次数下的用户流失率对比.png
+            - images\不同时间段流失率随时间的变化趋势.png
+            - images\不同登录频次下的用户流失率对比.png
+            - images\不同社交类型下的用户流失率对比.png
+            - images\不同胜率下的用户流失率对比.png
+            - images\为什么没有时间序列分析？我都明确指出了.png
+            - images\各周期流失率时间趋势与关键拐点标注.png
+            - images\各周期流失率波动性评估（滚动标准差与变异系数）.png
+            - images\多周期流失率相关性与分布结构分析.png
+            - images\敌方各类飞机出动架次统计.png
+            - images\淮海战役我军日均伤亡人数及与歼敌数对比.png
+            - images\淮海战役支前工作人力与物资投入.png
+            - images\淮海战役歼灭国民党军单位及人数统计.png
+            - images\用户数量与流失率的相关性分析.png
+            - images\街道流失率相对强度及与整体1日流失的时序关联.png
+            - images\街道级与整体流失率的对比分析.png
+            - logs\__main__.log
+            - logs\evaluate_question.log
+            - logs\get_response.log
+            - logs\get_response.log.1
+            - logs\get_response.log.2
+            - logs\get_response.log.3
+            - logs\get_response.log.4
+            - logs\get_response.log.5
+            - logs\i18n.log
+            - logs\rerank_documents.log
+            - logs\safe_generator.log
+            - logs\schemas.log
+            - logs\search.log
+            - logs\serp_cluster.log
+            - main.py
+            - plot\_sales_trend_test.png
+            - plot\sales_trend_test.png
+            - plot\三大战役交换比变化趋势.png
+            - plot\三大战役交换比趋势.png
+            - plot\三大战役国民党军非战斗减员比例对比.png
+            - plot\三大战役解放军与国民党军交换比对比.png
+            - plot\三大战役解放军伤亡结构对比.png
+            - plot\各战役解放军损失结构分解.png
+            - plot\国民党军歼灭方式构成分析.png
+            - plot\国民党军歼灭构成分析.png
+            - plot\解放军伤亡构成分析.png
+            - plugins\__init__.py
+            - plugins\llm\__init__.py
+            - plugins\llm\gemini_llm.py
+            - plugins\llm\openai_llm.py
+            - plugins\llm\qwen_llm.py
+            - plugins\llm\vertex_llm.py
+            - plugins\search\__init__.py
+            - plugins\search\brave_search.py
+            - plugins\search\jina_search.py
+            - plugins\search\milvus_search.py
+            - reports\report_plan_20260602202721.md
+            - reports\report_plan_20260602205133.md
+            - reports\report_plan_20260602205133.zip
+            - reports\report_plan_20260603105034.md
+            - reports\report_plan_20260603105034.zip
+            - result_output.txt
+            - store_context\10\context.json
+            - store_context\10\knowledge.json
+            - store_context\10\messages.json
+            - store_context\10\prompt-10.txt
+            - store_context\10\queries.json
+            - store_context\10\questions.json
+            - store_context\10\urls.json
+            - store_context\11\context.json
+            - store_context\11\knowledge.json
+            - store_context\11\messages.json
+            - store_context\11\prompt-11.txt
+            - store_context\11\queries.json
+            - store_context\11\questions.json
+            - store_context\11\urls.json
+            - store_context\1\context.json
+            - store_context\1\knowledge.json
+            - store_context\1\messages.json
+            - store_context\1\prompt-1.txt
+            - store_context\1\queries.json
+            - store_context\1\questions.json
+            - store_context\1\urls.json
+            - store_context\2\context.json
+            - store_context\2\knowledge.json
+            - store_context\2\messages.json
+            - store_context\2\prompt-2.txt
+            - store_context\2\queries.json
+            - store_context\2\questions.json
+            - store_context\2\urls.json
+            - store_context\3\context.json
+            - store_context\3\knowledge.json
+            - store_context\3\messages.json
+            - store_context\3\prompt-3.txt
+            - store_context\3\queries.json
+            - store_context\3\questions.json
+            - store_context\3\urls.json
+            - store_context\4\context.json
+            - store_context\4\knowledge.json
+            - store_context\4\messages.json
+            - store_context\4\prompt-4.txt
+            - store_context\4\queries.json
+            - store_context\4\questions.json
+            - store_context\4\urls.json
+            - store_context\5\context.json
+            - store_context\5\knowledge.json
+            - store_context\5\messages.json
+            - store_context\5\prompt-5.txt
+            - store_context\5\queries.json
+            - store_context\5\questions.json
+            - store_context\5\urls.json
+            - store_context\6\context.json
+            - store_context\6\knowledge.json
+            - store_context\6\messages.json
+            - store_context\6\prompt-6.txt
+            - store_context\6\queries.json
+            - store_context\6\questions.json
+            - store_context\6\urls.json
+            - store_context\7\context.json
+            - store_context\7\knowledge.json
+            - store_context\7\messages.json
+            - store_context\7\prompt-7.txt
+            - store_context\7\queries.json
+            - store_context\7\questions.json
+            - store_context\7\urls.json
+            - store_context\8\context.json
+            - store_context\8\knowledge.json
+            - store_context\8\messages.json
+            - store_context\8\prompt-8.txt
+            - store_context\8\queries.json
+            - store_context\8\questions.json
+            - store_context\8\urls.json
+            - store_context\9\context.json
+            - store_context\9\knowledge.json
+            - store_context\9\messages.json
+            - store_context\9\prompt-9.txt
+            - store_context\9\queries.json
+            - store_context\9\questions.json
+            - store_context\9\urls.json
+            - test\msg_with_knowledge_1.json
+            - test\msg_with_knowledge_2.json
+            - test\msg_with_knowledge_3.json
+            - test\system_1.json
+            - test\system_2.json
+            - test\system_3.json
+            - tool\analysis_sandbox.py
+            - tool\build_refs.py
+            - tool\code_sandbox.py
+            - tool\cosin.py
+            - tool\date_tools.py
+            - tool\embedding.py
+            - tool\error_analyzer.py
+            - tool\evaluator.py
+            - tool\finalizer.py
+            - tool\i18n.json
+            - tool\image_tools.py
+            - tool\intent_reg.py
+            - tool\jina_classify_spam.py
+            - tool\jina_dedup.py
+            - tool\jina_latechunk.py
+            - tool\jina_rerank.py
+            - tool\jina_search.py
+            - tool\queryrewriter.py
+            - tool\read_tools.py
+            - tool\segments.py
+            - tool\serp_cluster.py
+            - tool\text_tools.py
+            - utils\action_tracker.py
+            - utils\data_loader.py
+            - utils\get_log.py
+            - utils\memory.py
+            - utils\safe_generator.py
+            - utils\schemas.py
+            - utils\token_tracker.py
+            - utils\url_tool.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    config_module:
+        dir_name: LLM配置与模型实例管理
+        title: LLM配置与模型实例管理
+        scope:
+            - config/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: plugin_system
+    plugin_system:
+        dir_name: 插件系统与运行时管理
+        title: 插件系统与运行时管理
+        scope:
+            - core/
+            - plugins/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: config_module
+    tools_library:
+        dir_name: AI Agent Toolchain & Evaluation
+        title: AI Agent Toolchain & Evaluation
+        scope:
+            - tool/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: web_ui_app
+    web_ui_app:
+        dir_name: 统计智能体交互与执行引擎
+        title: 统计智能体交互与执行引擎
+        scope:
+            - web_ui.py
+            - statistic_agent.py
+            - plot_chart.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: tools_library

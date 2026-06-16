@@ -89,7 +89,7 @@ The answer is not definitive and fails to provide the requested information.  La
 }}
 </output>
 </example>""",
-        'user': f"{'\n'.join(diary_context)}"
+        'user': "\n".join(diary_context)
     }
 
 

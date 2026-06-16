@@ -71,11 +71,13 @@ class PluginManager:
             self._instances[category][name] = instance
         return self._instances[category][name]
 
-    def reload(self, category: str, name: str) -> BasePlugin:
-        """重新加载某个插件实例（配置热更新时用）"""
+    def reload(self, category: str, name: str, config: Optional[Dict[str, Any]] = None) -> BasePlugin:
+        """重新加载某个插件实例（配置热更新时用）。
+        会丢弃已缓存实例并用新配置重新初始化。
+        """
         if category in self._instances and name in self._instances[category]:
             del self._instances[category][name]
-        return self.get_instance(category, name)
+        return self.get_instance(category, name, config if config is not None else {})
 
     def list(self, category: str = None) -> Dict[str, Any]:
         return list_plugins(category)
@@ -107,3 +109,12 @@ def get_plugin_instance(
 def discover_plugins() -> None:
     """手动触发一次插件发现"""
     get_manager().discover()
+
+
+def reload_plugin(
+    category: str,
+    name: str,
+    config: Optional[Dict[str, Any]] = None,
+) -> BasePlugin:
+    """快捷函数：用新配置重新加载插件实例"""
+    return get_manager().reload(category, name, config)
